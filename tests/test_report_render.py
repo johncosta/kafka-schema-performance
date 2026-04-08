@@ -24,6 +24,8 @@ def test_render_markdown_multi_profile_headings() -> None:
     assert "Measurement model" in md
     assert "Raw encoded size" in md
     assert "Compressed payload sizes" in md
+    assert "## Limitations" in md
+    assert "## Artifact integrity" in md
 
 
 def test_render_markdown_s1_tier_section() -> None:

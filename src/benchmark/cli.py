@@ -161,6 +161,20 @@ def run_cmd(
         max=22,
         help="Tier S1 only: zstd level for timed compress (default 3 if omitted)",
     ),
+    baseline_report: Path | None = typer.Option(
+        None,
+        "--baseline-report",
+        help=(
+            "Optional prior report.json for heuristic regression warnings "
+            "(same scenario fingerprint required)"
+        ),
+    ),
+    regression_warn_ratio: float = typer.Option(
+        0.2,
+        "--regression-warn-ratio",
+        min=0.0,
+        help="Warn if round_trip mean exceeds baseline × (1 + this ratio)",
+    ),
 ) -> None:
     """Run benchmark matrix and write report.json (+ report.md)."""
 
@@ -206,7 +220,14 @@ def run_cmd(
         confluent_prefix_bytes=confluent_prefix_bytes,
         s1_gzip_level=s1_gzip_level,
         s1_zstd_level=s1_zstd_level,
+        baseline_report_path=str(baseline_report) if baseline_report else None,
+        regression_warn_ratio=regression_warn_ratio,
     )
+    rc = report.get("regression_check")
+    if isinstance(rc, dict) and not rc.get("skipped") and rc.get("warnings"):
+        for w in rc["warnings"]:
+            msg = w.get("message") if isinstance(w, dict) else str(w)
+            typer.echo(msg, err=True)
     json_path, md_path = write_report_bundle(report, str(output_dir))
     typer.echo(f"Wrote {json_path}")
     if md_path:

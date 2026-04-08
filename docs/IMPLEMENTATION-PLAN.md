@@ -186,6 +186,8 @@ Versioned JSON schema or Pydantic models for:
 - **Appendix:** limitations (hardware, OS thermal, background noise).
 - SBOM or `pip list` / lockfile digest in report (PRD §7 artifact integrity).
 
+**Delivered:** Structured **`limitations`** in JSON and Markdown; **`artifact_integrity`** from sorted **`pip freeze`** plus SHA-256 of joined lines; CLI **`--baseline-report`** and **`--regression-warn-ratio`** with optional **`regression_check`** in JSON (scenario fingerprint must match) and stderr warnings when means exceed baseline × (1 + ratio); Markdown sections **Limitations**, **Artifact integrity**, **Regression check**. **`report_version` 6**.
+
 **Exit:** MVP criterion (5) satisfied in default report template.
 
 ---

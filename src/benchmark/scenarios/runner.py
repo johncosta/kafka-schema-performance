@@ -11,7 +11,7 @@ from benchmark.codecs.avro_codec import AvroCodec, make_evolution_codec
 from benchmark.codecs.base import Codec
 from benchmark.codecs.json_codec import JsonCodec
 from benchmark.codecs.protobuf_codec import ProtobufCodec
-from benchmark.env import collect_environment
+from benchmark.env import collect_environment, collect_pip_freeze_integrity
 from benchmark.fixtures.checksum import fixture_sha256
 from benchmark.generate.records import PayloadProfile, sample_event
 from benchmark.metrics.compress import (
@@ -29,6 +29,8 @@ from benchmark.metrics.stats import (
     summarize_times,
 )
 from benchmark.models.event import AnalyticsEvent
+from benchmark.report.limitations import limitations_for_report
+from benchmark.report.regression import regression_check_against_baseline_file
 from benchmark.report.render import render_markdown
 
 ScenarioTier = Literal["S0", "S1"]
@@ -392,6 +394,8 @@ def build_report(
     confluent_prefix_bytes: int = 5,
     s1_gzip_level: int | None = None,
     s1_zstd_level: int | None = None,
+    baseline_report_path: str | None = None,
+    regression_warn_ratio: float = 0.2,
 ) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     for profile in profiles:
@@ -449,11 +453,13 @@ def build_report(
         }
 
     report: dict[str, Any] = {
-        "report_version": 5,
+        "report_version": 6,
         "scenario": scenario_block,
         "measurement": MEASUREMENT_MODEL,
         "environment": collect_environment(),
         "fixture_bundle_sha256": fixture_sha256(),
+        "limitations": limitations_for_report(),
+        "artifact_integrity": collect_pip_freeze_integrity(),
         "results": rows,
     }
     if rubric_governance:
@@ -466,6 +472,12 @@ def build_report(
         rubric_index.append(str(maint["rubric_ref"]))
     if rubric_index:
         report["rubric_index"] = rubric_index
+    if baseline_report_path:
+        report["regression_check"] = regression_check_against_baseline_file(
+            report,
+            baseline_report_path,
+            warn_ratio=regression_warn_ratio,
+        )
     return report
 
 
