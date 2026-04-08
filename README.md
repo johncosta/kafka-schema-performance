@@ -46,6 +46,18 @@ python -m grpc_tools.protoc \
 
 ## Development
 
+Use the [Makefile](Makefile) so local runs match CI:
+
+```bash
+make install   # upgrade pip + editable install with dev extras
+make lint      # ruff, black --check, mypy
+make test      # pytest + CLI smoke (same as CI)
+```
+
+Override the interpreter if needed: `PYTHON=python3 make install` (default is `python3`).
+
+Manual equivalents:
+
 ```bash
 ruff check src tests
 black src tests

@@ -110,6 +110,7 @@ Versioned JSON schema or Pydantic models for:
 - CLI stub: `run --scenario small --formats all --tier S0 --output-dir reports/`.
 - **Reproducibility:** collect versions; fail or warn if critical metadata missing (configurable).
 - **CI:** lint + typecheck + unit tests on **non-benchmark** code (generators, report merge, checksums).
+- **Makefile:** `make install`, `make lint`, `make test` (GitHub Actions runs the same targets).
 - **Pre-commit or CI:** format (e.g. black/ruff format).
 
 **Exit:** CI green; `run --help` works; empty or placeholder report structure validates.
