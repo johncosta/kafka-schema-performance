@@ -124,6 +124,8 @@ Versioned JSON schema or Pydantic models for:
 
 **Exit:** Full matrix of schemas + generators; tests prove semantic equivalence for fixed samples.
 
+**Delivered:** `sample_events(profile, seed, count)`; golden helpers `golden_*_event()` for all profiles; JSON Schema allows `null` `payload_blob` (matches canonical JSON codec); tests cover generator determinism, batch consistency, and Avro v1→v2 golden path via `make_evolution_codec()`.
+
 ### Phase 2 — S0 codec benchmarks
 
 - Implement benchmark loop: warmup, timed iterations, optional multithreading (document thread model).
