@@ -22,3 +22,5 @@ def test_render_markdown_multi_profile_headings() -> None:
     assert "### Profile `medium`" in md
     assert "Round-trip:" in md
     assert "Measurement model" in md
+    assert "Raw encoded size" in md
+    assert "Compressed payload sizes" in md

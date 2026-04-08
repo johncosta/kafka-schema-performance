@@ -19,6 +19,9 @@ def test_bench_codec_smoke_s0() -> None:
     assert r["codec"] == "json"
     assert r["raw_size_bytes"] > 0
     assert r["raw_size_bytes"] == r["compressed_size_bytes"]
+    assert r["raw_encoded_bytes"]["n"] == 10
+    assert r["compressed_payload_bytes"]["gzip"]["bytes"] > 0
+    assert r["derived_cost"]["reference_formulas"]
     assert r["allocations"] is None
     rt = r["round_trip"]
     assert "round_trip_mb_per_s" in rt
@@ -39,6 +42,21 @@ def test_bench_codec_tracemalloc_sample() -> None:
     assert r["allocations"]["peak_bytes_traced"] >= 0
 
 
+def test_bench_codec_confluent_envelope() -> None:
+    r = bench_codec(
+        JsonCodec(),
+        golden_small_event(),
+        tier="S0",
+        compression="zstd",
+        warmup=0,
+        iterations=2,
+        include_confluent_envelope=True,
+        confluent_prefix_bytes=5,
+    )
+    assert r["kafka_shaped"] is not None
+    assert r["kafka_shaped"]["total_value_bytes"] == r["raw_size_bytes"] + 5
+
+
 def test_build_report_multi_profile_matrix() -> None:
     report = build_report(
         profiles=[
@@ -55,7 +73,7 @@ def test_build_report_multi_profile_matrix() -> None:
         rubric_governance=None,
         rubric_maintainability=None,
     )
-    assert report["report_version"] == 2
+    assert report["report_version"] == 3
     assert report["scenario"]["payload_profiles"] == ["small", "medium", "large"]
     assert len(report["results"]) == 3
     assert {row["payload_profile"] for row in report["results"]} == {
@@ -64,3 +82,4 @@ def test_build_report_multi_profile_matrix() -> None:
         "large",
     }
     assert "measurement" in report
+    assert report["scenario"]["size_and_cost"]["gzip_compresslevel"] == 6

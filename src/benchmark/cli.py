@@ -121,6 +121,32 @@ def run_cmd(
         "--tracemalloc/--no-tracemalloc",
         help="Optional one-shot tracemalloc peak after warmup (noisy; off by default)",
     ),
+    gzip_level: int = typer.Option(
+        6,
+        "--gzip-level",
+        min=1,
+        max=9,
+        help="gzip level used for wire-size probes (Phase 3; independent of tier S1)",
+    ),
+    zstd_level: int = typer.Option(
+        3,
+        "--zstd-level",
+        min=1,
+        max=22,
+        help="zstd level used for wire-size probes (Phase 3; independent of tier S1)",
+    ),
+    confluent_envelope: bool = typer.Option(
+        False,
+        "--confluent-envelope/--no-confluent-envelope",
+        help="Add Confluent wire-format value prefix bytes to kafka_shaped size",
+    ),
+    confluent_prefix_bytes: int = typer.Option(
+        5,
+        "--confluent-prefix-bytes",
+        min=0,
+        max=256,
+        help="Prefix length for kafka_shaped total (default 5 = magic+schema id)",
+    ),
 ) -> None:
     """Run benchmark matrix and write report.json (+ report.md)."""
 
@@ -160,6 +186,10 @@ def run_cmd(
         rubric_governance=str(gov) if gov else None,
         rubric_maintainability=str(maint) if maint else None,
         tracemalloc_sample=tracemalloc_sample,
+        gzip_level=gzip_level,
+        zstd_level=zstd_level,
+        include_confluent_envelope=confluent_envelope,
+        confluent_prefix_bytes=confluent_prefix_bytes,
     )
     json_path, md_path = write_report_bundle(report, str(output_dir))
     typer.echo(f"Wrote {json_path}")

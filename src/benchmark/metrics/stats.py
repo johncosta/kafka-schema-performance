@@ -37,3 +37,24 @@ def mb_per_second(mean_s: float, size_bytes: int) -> float:
     if mean_s <= 0:
         return float("nan")
     return (size_bytes / mean_s) / (1024.0 * 1024.0)
+
+
+def summarize_byte_lengths(samples: list[int]) -> dict[str, float | int]:
+    """Mean / median / p95 over per-iteration encoded lengths (often constant)."""
+
+    if not samples:
+        return {
+            "mean": float("nan"),
+            "median": float("nan"),
+            "p95": float("nan"),
+            "n": 0,
+        }
+    s_float = sorted(float(x) for x in samples)
+    n = len(samples)
+    mean = sum(samples) / n
+    return {
+        "mean": mean,
+        "median": _percentile(s_float, 0.50),
+        "p95": _percentile(s_float, 0.95),
+        "n": n,
+    }

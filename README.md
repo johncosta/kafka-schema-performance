@@ -25,12 +25,13 @@ ksp-bench run --scenario all --tier S0 --formats all --output-dir reports/
 - **Profiles:** `small`, `medium`, `large`, `evolution`, **`all`** (runs small+medium+large), or a **comma-separated** list (e.g. `small,medium`). Evolution uses Avro schema v1 → v2 when format is Avro.
 - **Tiers:** `S0` codec only; `S1` adds **gzip** or **zstd** around the encoded bytes (`--compression`).
 - **Formats:** `all` or comma-separated `avro,protobuf,json`.
+- **Wire sizes (Phase 3):** `--gzip-level`, `--zstd-level` control size probes; optional `--confluent-envelope` / `--confluent-prefix-bytes` for Kafka-shaped value totals (independent of S1 timing compression).
 
 Rubrics under `rubrics/` are merged into `report.json` when those files exist (default discovery from the current working directory).
 
 Artifacts:
 
-- `report.json` — machine-readable results (`report_version` 2: `payload_profiles` list + `payload_profile` on each result row), environment, fixture checksum, optional rubrics, optional `measurement` / `allocations` metadata.
+- `report.json` — machine-readable results (`report_version` 3: adds per-row wire-size stats, gzip/zstd size probes, optional Kafka-shaped prefix totals, `derived_cost`; see `scenario.size_and_cost`), environment, fixture checksum, optional rubrics, `measurement` / `allocations`.
 - `report.md` — short human-readable summary and layer-cake notes.
 
 ## Protobuf code generation
