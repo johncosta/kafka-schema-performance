@@ -7,6 +7,77 @@ from typing import Any
 from benchmark.report.rubrics_md import append_rubric_appendix
 
 
+def append_phase8_sections(lines: list[str], report: dict[str, Any]) -> None:
+    """Limitations, pip-freeze digest, optional regression block (Phase 8)."""
+
+    lim = report.get("limitations")
+    if isinstance(lim, dict):
+        lines.extend(["---", "", "## Limitations", ""])
+        summ = lim.get("summary")
+        if summ:
+            lines.append(str(summ))
+            lines.append("")
+        pts = lim.get("points")
+        if isinstance(pts, list):
+            for p in pts:
+                lines.append(f"- {p}")
+            lines.append("")
+        pol = lim.get("interpretation_policy")
+        if pol:
+            lines.append(f"**Interpretation:** {pol}")
+            lines.append("")
+
+    art = report.get("artifact_integrity")
+    if isinstance(art, dict):
+        lines.extend(["## Artifact integrity", ""])
+        if art.get("error"):
+            lines.append(f"- Capture failed: {art['error']}")
+        else:
+            lines.append(f"- Method: {art.get('method', '')}")
+            lines.append(f"- Sorted `pip freeze` lines: {art.get('line_count', 0)}")
+            sha = art.get("sha256", "")
+            lines.append(
+                f"- SHA-256 (UTF-8, sorted lines joined by newlines): `{sha}`",
+            )
+            ec = art.get("pip_exit_code")
+            if ec not in (None, 0):
+                lines.append(f"- `pip` exit code: {ec}")
+        note = art.get("note")
+        if note:
+            lines.append(f"- {note}")
+        lines.append("")
+
+    rc = report.get("regression_check")
+    if isinstance(rc, dict):
+        lines.extend(["## Regression check (optional)", ""])
+        if rc.get("skipped"):
+            lines.append(f"Skipped: {rc.get('reason', '')}")
+            bp = rc.get("baseline_path")
+            if bp:
+                lines.append(f"Baseline: `{bp}`")
+        else:
+            bp = rc.get("baseline_path")
+            if bp:
+                lines.append(f"Baseline: `{bp}`")
+            wr = rc.get("warn_ratio")
+            if wr is not None:
+                lines.append(f"Warn ratio: {wr}")
+            warns = rc.get("warnings") or []
+            if not warns:
+                lines.append("No warnings (within threshold).")
+            else:
+                for w in warns:
+                    if isinstance(w, dict) and w.get("message"):
+                        lines.append(f"- {w['message']}")
+                    else:
+                        lines.append(f"- {w}")
+            note = rc.get("note")
+            if note:
+                lines.append("")
+                lines.append(f"_{note}_")
+        lines.append("")
+
+
 def _fmt_sci(x: float) -> str:
     if math.isnan(x):
         return "nan"
@@ -303,4 +374,5 @@ def render_markdown(report: dict[str, Any]) -> str:
             lines.append(f"- Excluded: {', '.join(lc['excluded'])}")
             lines.append("")
     append_rubric_appendix(lines, report)
+    append_phase8_sections(lines, report)
     return "\n".join(lines)

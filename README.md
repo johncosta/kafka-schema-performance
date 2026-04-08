@@ -31,8 +31,14 @@ Rubrics under `rubrics/` are merged into `report.json` when those files exist (d
 
 Artifacts:
 
-- `report.json` — machine-readable results (`report_version` **5**: S1 `scenario.s1`, per-row `s1_timed_compression`, compressed-wire MB/s; v4 rubrics / v3 sizes retained), environment, fixture checksum, `measurement` / `allocations`.
-- `report.md` — short human-readable summary and layer-cake notes.
+- `report.json` — machine-readable results (`report_version` **6**: adds **`limitations`**, **`artifact_integrity`** (sorted `pip freeze` + SHA-256), optional **`regression_check`** when **`--baseline-report`** is set; still includes v5 S1 fields, rubrics, sizes), environment, fixture checksum, `measurement` / `allocations`.
+- `report.md` — short human-readable summary, layer-cake notes, and Phase-8 appendix (limitations, artifact integrity, regression when enabled).
+
+Optional regression hints (same scenario fingerprint as the baseline `report.json`):
+
+```bash
+ksp-bench run --scenario small --formats json --baseline-report reports/prior/report.json
+```
 
 ## Protobuf code generation
 
