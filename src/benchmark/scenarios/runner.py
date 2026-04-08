@@ -14,7 +14,13 @@ from benchmark.codecs.protobuf_codec import ProtobufCodec
 from benchmark.env import collect_environment
 from benchmark.fixtures.checksum import fixture_sha256
 from benchmark.generate.records import PayloadProfile, sample_event
-from benchmark.metrics.compress import CompressionAlg, compress, decompress
+from benchmark.metrics.compress import (
+    DEFAULT_GZIP_COMPRESSLEVEL,
+    DEFAULT_ZSTD_LEVEL,
+    CompressionAlg,
+    compress,
+    decompress,
+)
 from benchmark.metrics.cost import derived_cost_model
 from benchmark.metrics.sizes import confluent_value_envelope
 from benchmark.metrics.stats import (
@@ -49,7 +55,29 @@ MEASUREMENT_MODEL: dict[str, Any] = {
             "decode in one pass; not the sum of separate encode/decode means."
         ),
     },
+    "tier_s1_vs_s0": (
+        "S1 includes compressor CPU in the same timed windows as the codec. "
+        "S0 is codec-only. Compare by re-running the same scenario/seed/formats "
+        "with --tier S0 and --tier S1; do not compare S1 rows to S0 from different "
+        "reports without matching scenario metadata."
+    ),
 }
+
+
+def _compress_s1_wire(
+    algorithm: CompressionAlg,
+    payload: bytes,
+    *,
+    s1_gzip_level: int | None,
+    s1_zstd_level: int | None,
+) -> bytes:
+    """Compress raw encoded bytes using the tier-S1 algorithm and levels."""
+
+    if algorithm == "none":
+        return payload
+    if algorithm == "gzip":
+        return compress("gzip", payload, level=s1_gzip_level)
+    return compress("zstd", payload, level=s1_zstd_level)
 
 
 def _tracemalloc_round_trip_peak(
@@ -58,6 +86,8 @@ def _tracemalloc_round_trip_peak(
     *,
     tier: ScenarioTier,
     compression: CompressionAlg,
+    s1_gzip_level: int | None,
+    s1_zstd_level: int | None,
 ) -> dict[str, Any]:
     """One post-warmup sample; tracemalloc is noisy — use for trends only."""
 
@@ -65,7 +95,12 @@ def _tracemalloc_round_trip_peak(
     try:
         raw = codec.encode(event)
         if tier == "S1":
-            raw = compress(compression, raw)
+            raw = _compress_s1_wire(
+                compression,
+                raw,
+                s1_gzip_level=s1_gzip_level,
+                s1_zstd_level=s1_zstd_level,
+            )
             raw = decompress(compression, raw)
         _ = codec.decode(raw)
         _, peak = tracemalloc.get_traced_memory()
@@ -106,12 +141,19 @@ def bench_codec(
     zstd_level: int = 3,
     include_confluent_envelope: bool = False,
     confluent_prefix_bytes: int = 5,
+    s1_gzip_level: int | None = None,
+    s1_zstd_level: int | None = None,
 ) -> dict[str, Any]:
     encoded_last: bytes | None = None
     for _ in range(warmup):
         raw = codec.encode(event)
         if tier == "S1":
-            blob = compress(compression, raw)
+            blob = _compress_s1_wire(
+                compression,
+                raw,
+                s1_gzip_level=s1_gzip_level,
+                s1_zstd_level=s1_zstd_level,
+            )
             raw = decompress(compression, blob)
         _ = codec.decode(raw)
         encoded_last = codec.encode(event)
@@ -119,7 +161,16 @@ def bench_codec(
     if encoded_last is None:
         encoded_last = codec.encode(event)
     raw_wire = encoded_last
-    compressed_wire = compress(compression, raw_wire) if tier == "S1" else raw_wire
+    compressed_wire = (
+        _compress_s1_wire(
+            compression,
+            raw_wire,
+            s1_gzip_level=s1_gzip_level,
+            s1_zstd_level=s1_zstd_level,
+        )
+        if tier == "S1"
+        else raw_wire
+    )
 
     enc_times: list[float] = []
     wire_len_samples: list[int] = []
@@ -128,10 +179,24 @@ def bench_codec(
         raw = codec.encode(event)
         wire_len_samples.append(len(raw))
         if tier == "S1":
-            _ = compress(compression, raw)
+            _ = _compress_s1_wire(
+                compression,
+                raw,
+                s1_gzip_level=s1_gzip_level,
+                s1_zstd_level=s1_zstd_level,
+            )
         enc_times.append(time.perf_counter() - t0)
 
-    decode_blob = compress(compression, raw_wire) if tier == "S1" else raw_wire
+    decode_blob = (
+        _compress_s1_wire(
+            compression,
+            raw_wire,
+            s1_gzip_level=s1_gzip_level,
+            s1_zstd_level=s1_zstd_level,
+        )
+        if tier == "S1"
+        else raw_wire
+    )
     dec_times: list[float] = []
     for _ in range(iterations):
         t0 = time.perf_counter()
@@ -144,7 +209,12 @@ def bench_codec(
         t0 = time.perf_counter()
         raw = codec.encode(event)
         if tier == "S1":
-            raw = compress(compression, raw)
+            raw = _compress_s1_wire(
+                compression,
+                raw,
+                s1_gzip_level=s1_gzip_level,
+                s1_zstd_level=s1_zstd_level,
+            )
             raw = decompress(compression, raw)
         _ = codec.decode(raw)
         rt_times.append(time.perf_counter() - t0)
@@ -154,6 +224,27 @@ def bench_codec(
     rt_stats = summarize_times(rt_times)
     raw_size = len(raw_wire)
     comp_size = len(compressed_wire) if tier == "S1" else raw_size
+
+    gzip_level_used = (
+        s1_gzip_level if s1_gzip_level is not None else DEFAULT_GZIP_COMPRESSLEVEL
+    )
+    zstd_level_used = s1_zstd_level if s1_zstd_level is not None else DEFAULT_ZSTD_LEVEL
+    s1_timed_compression: dict[str, Any] | None = None
+    if tier == "S1":
+        s1_timed_compression = {
+            "timed_algorithm": compression,
+            "gzip_level_used": gzip_level_used if compression == "gzip" else None,
+            "zstd_level_used": zstd_level_used if compression == "zstd" else None,
+            "raw_bytes": raw_size,
+            "compressed_bytes": comp_size,
+            "ratio_compressed_to_raw": (
+                (comp_size / raw_size) if raw_size else float("nan")
+            ),
+            "note": (
+                "Separate from Phase-3 gzip/zstd probes on raw wire "
+                "(scenario size_and_cost levels)."
+            ),
+        }
 
     raw_len_stats = summarize_byte_lengths(wire_len_samples)
     gzip_blob = compress("gzip", raw_wire, level=gzip_level)
@@ -192,26 +283,42 @@ def bench_codec(
             event,
             tier=tier,
             compression=compression,
+            s1_gzip_level=s1_gzip_level,
+            s1_zstd_level=s1_zstd_level,
         )
 
-    return {
+    enc_block: dict[str, Any] = enc_stats | {
+        "encode_mb_per_s": mb_per_second(enc_stats["mean_s"], raw_size),
+    }
+    dec_block: dict[str, Any] = dec_stats | {
+        "decode_mb_per_s": mb_per_second(dec_stats["mean_s"], raw_size),
+    }
+    rt_block: dict[str, Any] = rt_stats | {
+        "round_trip_mb_per_s": mb_per_second(rt_stats["mean_s"], raw_size),
+    }
+    if tier == "S1":
+        enc_block["encode_compressed_wire_mb_per_s"] = mb_per_second(
+            enc_stats["mean_s"],
+            comp_size,
+        )
+        dec_block["decode_compressed_input_mb_per_s"] = mb_per_second(
+            dec_stats["mean_s"],
+            comp_size,
+        )
+        rt_block["round_trip_compressed_wire_mb_per_s"] = mb_per_second(
+            rt_stats["mean_s"],
+            comp_size,
+        )
+
+    out: dict[str, Any] = {
         "codec": codec.name,
         "tier": tier,
         "compression": compression if tier == "S1" else "none",
         "raw_size_bytes": raw_size,
         "compressed_size_bytes": comp_size,
-        "encode": enc_stats
-        | {
-            "encode_mb_per_s": mb_per_second(enc_stats["mean_s"], raw_size),
-        },
-        "decode": dec_stats
-        | {
-            "decode_mb_per_s": mb_per_second(dec_stats["mean_s"], raw_size),
-        },
-        "round_trip": rt_stats
-        | {
-            "round_trip_mb_per_s": mb_per_second(rt_stats["mean_s"], raw_size),
-        },
+        "encode": enc_block,
+        "decode": dec_block,
+        "round_trip": rt_block,
         "raw_encoded_bytes": raw_len_stats,
         "compressed_payload_bytes": compressed_payload,
         "kafka_shaped": kafka_shaped,
@@ -219,6 +326,9 @@ def bench_codec(
         "layer_cake": _layer_cake(tier, compression),
         "allocations": allocations,
     }
+    if s1_timed_compression is not None:
+        out["s1_timed_compression"] = s1_timed_compression
+    return out
 
 
 def _layer_cake(tier: ScenarioTier, compression: CompressionAlg) -> dict[str, Any]:
@@ -236,8 +346,9 @@ def _layer_cake(tier: ScenarioTier, compression: CompressionAlg) -> dict[str, An
     return {
         "included": [
             "codec encode/decode",
-            f"compression ({compression}) after encode",
-            "decompress before decode",
+            f"compression ({compression}) after encode (CPU in encode timing)",
+            "decompress before decode (CPU in decode timing)",
+            "round-trip timer includes compress+decompress between codec phases",
         ],
         "excluded": ["network", "Kafka client", "schema registry", "TLS"],
     }
@@ -279,6 +390,8 @@ def build_report(
     zstd_level: int = 3,
     include_confluent_envelope: bool = False,
     confluent_prefix_bytes: int = 5,
+    s1_gzip_level: int | None = None,
+    s1_zstd_level: int | None = None,
 ) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     for profile in profiles:
@@ -297,31 +410,47 @@ def build_report(
                 zstd_level=zstd_level,
                 include_confluent_envelope=include_confluent_envelope,
                 confluent_prefix_bytes=confluent_prefix_bytes,
+                s1_gzip_level=s1_gzip_level,
+                s1_zstd_level=s1_zstd_level,
             )
             row["payload_profile"] = profile.value
             rows.append(row)
 
     rubric_index: list[str] = []
 
-    report: dict[str, Any] = {
-        "report_version": 4,
-        "scenario": {
-            "payload_profiles": [p.value for p in profiles],
-            "tier": tier,
-            "formats": formats,
-            "warmup_iterations": warmup,
-            "timed_iterations": iterations,
-            "seed": seed,
-            "compression": compression,
-            "size_and_cost": {
-                "gzip_compresslevel": gzip_level,
-                "zstd_level": zstd_level,
-                "include_confluent_envelope": include_confluent_envelope,
-                "confluent_prefix_bytes": (
-                    confluent_prefix_bytes if include_confluent_envelope else None
-                ),
-            },
+    scenario_block: dict[str, Any] = {
+        "payload_profiles": [p.value for p in profiles],
+        "tier": tier,
+        "formats": formats,
+        "warmup_iterations": warmup,
+        "timed_iterations": iterations,
+        "seed": seed,
+        "compression": compression,
+        "size_and_cost": {
+            "gzip_compresslevel": gzip_level,
+            "zstd_level": zstd_level,
+            "include_confluent_envelope": include_confluent_envelope,
+            "confluent_prefix_bytes": (
+                confluent_prefix_bytes if include_confluent_envelope else None
+            ),
         },
+    }
+    if tier == "S1":
+        scenario_block["s1"] = {
+            "timed_compression_algorithm": compression,
+            "gzip_level_cli": s1_gzip_level,
+            "zstd_level_cli": s1_zstd_level,
+            "default_gzip_level": DEFAULT_GZIP_COMPRESSLEVEL,
+            "default_zstd_level": DEFAULT_ZSTD_LEVEL,
+            "note": (
+                "Null CLI level means default above. Timed loop uses that level; "
+                "size_and_cost gzip/zstd are separate probes on raw wire."
+            ),
+        }
+
+    report: dict[str, Any] = {
+        "report_version": 5,
+        "scenario": scenario_block,
         "measurement": MEASUREMENT_MODEL,
         "environment": collect_environment(),
         "fixture_bundle_sha256": fixture_sha256(),

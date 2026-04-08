@@ -57,6 +57,26 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- **Seed:** {scen['seed']}",
         "",
     ]
+    s1_scen = scen.get("s1")
+    if scen.get("tier") == "S1" and isinstance(s1_scen, dict):
+        lines.extend(
+            [
+                "### Tier S1 (codec + compression)",
+                "",
+                "- **Timed compression algorithm:** "
+                f"{s1_scen.get('timed_compression_algorithm')}",
+                "- **S1 gzip level (CLI / default):** "
+                f"{s1_scen.get('gzip_level_cli')} / "
+                f"{s1_scen.get('default_gzip_level')}",
+                "- **S1 zstd level (CLI / default):** "
+                f"{s1_scen.get('zstd_level_cli')} / "
+                f"{s1_scen.get('default_zstd_level')}",
+                f"- **Note:** {s1_scen.get('note', '')}",
+                "",
+                "*Compare to S0: re-run with `--tier S0` and the same profiles/seed.*",
+                "",
+            ]
+        )
     sz = scen.get("size_and_cost")
     if isinstance(sz, dict):
         lines.extend(
@@ -88,6 +108,12 @@ def render_markdown(report: dict[str, Any]) -> str:
             lines.append("")
             for name, desc in phases.items():
                 lines.append(f"- **{name}:** {desc}")
+            lines.append("")
+        tier_note = meas.get("tier_s1_vs_s0")
+        if isinstance(tier_note, str) and tier_note:
+            lines.append("**S0 vs S1:**")
+            lines.append("")
+            lines.append(tier_note)
             lines.append("")
     lines.extend(
         [
@@ -129,24 +155,72 @@ def render_markdown(report: dict[str, Any]) -> str:
                     f"p50 / p90 / p99: {_fmt_sci(enc['p50_s'])} / "
                     f"{_fmt_sci(enc['p90_s'])} / {_fmt_sci(enc['p99_s'])}",
                     f"- records/s: {_fmt_intish(enc['records_per_s'])} | "
-                    f"MB/s: {_fmt_mb_s(enc['encode_mb_per_s'])}",
+                    f"MB/s (raw wire): {_fmt_mb_s(enc['encode_mb_per_s'])}",
                     "",
+                ]
+            )
+            if "encode_compressed_wire_mb_per_s" in enc:
+                lines.append(
+                    f"- **S1** MB/s on compressed wire (encode+compress): "
+                    f"{_fmt_mb_s(enc['encode_compressed_wire_mb_per_s'])}",
+                )
+                lines.append("")
+            lines.extend(
+                [
                     "**Decode:**",
                     f"- mean: {_fmt_sci(dec['mean_s'])} s | "
                     f"p50 / p90 / p99: {_fmt_sci(dec['p50_s'])} / "
                     f"{_fmt_sci(dec['p90_s'])} / {_fmt_sci(dec['p99_s'])}",
                     f"- records/s: {_fmt_intish(dec['records_per_s'])} | "
-                    f"MB/s: {_fmt_mb_s(dec['decode_mb_per_s'])}",
+                    f"MB/s (raw wire): {_fmt_mb_s(dec['decode_mb_per_s'])}",
                     "",
+                ]
+            )
+            if "decode_compressed_input_mb_per_s" in dec:
+                lines.append(
+                    f"- **S1** MB/s reading compressed bytes (decompress+decode): "
+                    f"{_fmt_mb_s(dec['decode_compressed_input_mb_per_s'])}",
+                )
+                lines.append("")
+            lines.extend(
+                [
                     "**Round-trip:**",
                     f"- mean: {_fmt_sci(rt['mean_s'])} s | "
                     f"p50 / p90 / p99: {_fmt_sci(rt['p50_s'])} / "
                     f"{_fmt_sci(rt['p90_s'])} / {_fmt_sci(rt['p99_s'])}",
                     f"- records/s: {_fmt_intish(rt['records_per_s'])} | "
-                    f"MB/s: {_fmt_mb_s(rt.get('round_trip_mb_per_s', float('nan')))}",
+                    f"MB/s (raw wire): "
+                    f"{_fmt_mb_s(rt.get('round_trip_mb_per_s', float('nan')))}",
                     "",
                 ]
             )
+            if "round_trip_compressed_wire_mb_per_s" in rt:
+                lines.append(
+                    f"- **S1** MB/s on compressed wire (full round-trip path): "
+                    f"{_fmt_mb_s(rt['round_trip_compressed_wire_mb_per_s'])}",
+                )
+                lines.append("")
+            s1c = row.get("s1_timed_compression")
+            if isinstance(s1c, dict):
+                ratio = s1c.get("ratio_compressed_to_raw")
+                if isinstance(ratio, float) and math.isnan(ratio):
+                    rtxt = "nan"
+                elif isinstance(ratio, (int, float)):
+                    rtxt = f"{float(ratio):.4f}"
+                else:
+                    rtxt = str(ratio)
+                lines.extend(
+                    [
+                        "**S1 compression footprint (timed path):**",
+                        "",
+                        f"- Algorithm: `{s1c.get('timed_algorithm')}` | "
+                        f"compressed/raw ratio: {rtxt}",
+                        f"- Raw {s1c.get('raw_bytes')} B → compressed "
+                        f"{s1c.get('compressed_bytes')} B",
+                        f"- *{s1c.get('note', '')}*",
+                        "",
+                    ]
+                )
             raw_enc = row.get("raw_encoded_bytes")
             if isinstance(raw_enc, dict) and raw_enc.get("n"):
                 lines.extend(

@@ -147,6 +147,20 @@ def run_cmd(
         max=256,
         help="Prefix length for kafka_shaped total (default 5 = magic+schema id)",
     ),
+    s1_gzip_level: int | None = typer.Option(
+        None,
+        "--s1-gzip-level",
+        min=1,
+        max=9,
+        help="Tier S1 only: gzip level for timed compress (default 6 if omitted)",
+    ),
+    s1_zstd_level: int | None = typer.Option(
+        None,
+        "--s1-zstd-level",
+        min=1,
+        max=22,
+        help="Tier S1 only: zstd level for timed compress (default 3 if omitted)",
+    ),
 ) -> None:
     """Run benchmark matrix and write report.json (+ report.md)."""
 
@@ -190,6 +204,8 @@ def run_cmd(
         zstd_level=zstd_level,
         include_confluent_envelope=confluent_envelope,
         confluent_prefix_bytes=confluent_prefix_bytes,
+        s1_gzip_level=s1_gzip_level,
+        s1_zstd_level=s1_zstd_level,
     )
     json_path, md_path = write_report_bundle(report, str(output_dir))
     typer.echo(f"Wrote {json_path}")
