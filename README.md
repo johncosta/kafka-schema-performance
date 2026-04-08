@@ -46,15 +46,15 @@ python -m grpc_tools.protoc \
 
 ## Development
 
-Use the [Makefile](Makefile) so local runs match CI:
+Use the [Makefile](Makefile) so local runs match CI. The first `make install` creates **`.venv/`** with `python3 -m venv` and installs into it (required on macOS/Homebrew Python, which blocks global `pip` under PEP 668).
 
 ```bash
-make install   # upgrade pip + editable install with dev extras
-make lint      # ruff, black --check, mypy
+make install   # create .venv if needed, then editable install with dev extras
+make lint      # ruff, black --check, mypy (uses .venv)
 make test      # pytest + CLI smoke (same as CI)
 ```
 
-Override the interpreter if needed: `PYTHON=python3 make install` (default is `python3`).
+To use another Python for creating the venv, run `python3.12 -m venv .venv` yourself, then `make install` (the existing `.venv` is reused).
 
 Manual equivalents:
 
