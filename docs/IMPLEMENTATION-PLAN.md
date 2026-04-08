@@ -19,17 +19,24 @@ This document turns the PRD into a **phased delivery plan**: repository shape, c
 
 ## 2. Decisions to lock early
 
-Resolve these in **week zero** (update this section when decided):
+**Repository status:** locked for the Python harness in this project.
 
-| Decision | Options | Recommendation for fast MVP |
-|----------|---------|----------------------------|
-| **Harness language** | Python / Java / Go | **Python**: fast iteration, good Avro/protobuf/json libs; JVM later if you need producer/client parity with Java services. |
-| **MVP scenario tiers** | S0 only vs S0–S1 vs through S4 | **S0 + S1** in MVP; **S2** behind `--registry-url` or mock; **S3/S4** as phase 2+ or optional integration job. |
-| **Registry** | Confluent SR / Apicurio / mock | **Mock HTTP** or **Testcontainers** Confluent SR for S2; document subject strategy. |
-| **Kafka in CI** | None / Testcontainers / external | **None in default CI** for MVP; S3/S4 as optional workflow with `integration` label. |
-| **Stat engine** | Custom / `pytest-benchmark` / `pyperf` / Java JMH | Pick one; store **raw samples** or histogram buckets for p50/p90/p99. |
+| Decision | Choice |
+|----------|--------|
+| **Harness language** | **Python 3.11+** — package `benchmark` under `src/`, CLI **`ksp-bench`** (Typer) |
+| **Libraries** | **fastavro**, **protobuf** (generated `event_pb2`), **orjson**, **zstandard** / **gzip** for tier S1 |
+| **MVP scenario tiers** | **S0** (codec in-process) and **S1** (encode → compress → decompress → decode); **S2–S4** not implemented yet |
+| **Registry** | Not wired; **rubrics** YAML attached to reports for governance / maintainability metadata |
+| **Kafka in CI** | **None** (no producer/consumer path in default CI) |
+| **Stats** | `time.perf_counter` samples; **p50/p90/p99**, mean, records/s, MB/s |
 
-Document the chosen stack in `README.md` and in the emitted **environment** block of each report.
+Fork / alternate stacks: use the same scenario labels; pin library versions in each report’s **environment** block.
+
+| Decision | Options | Notes |
+|----------|---------|-------|
+| **Harness language** | Python / Java / Go | This repo implements **Python** first. |
+| **Later tiers** | S2–S4 | Registry + Kafka-style paths per PRD §6.3. |
+| **Stat engine** | Custom / pytest-benchmark / pyperf / JMH | This repo uses **custom** timers + JSON output. |
 
 ---
 

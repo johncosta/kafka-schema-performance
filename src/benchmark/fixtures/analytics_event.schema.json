@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/analytics_event.schema.json",
+  "title": "AnalyticsEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "ts_ms", "user_id", "props"],
+  "properties": {
+    "event_id": { "type": "string" },
+    "ts_ms": { "type": "integer" },
+    "user_id": { "type": "string" },
+    "props": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "context": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "device_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["device_id", "session_id", "tags"]
+    },
+    "payload_blob": { "type": "string", "contentEncoding": "base64" },
+    "new_field": { "type": ["string", "null"] }
+  }
+}
