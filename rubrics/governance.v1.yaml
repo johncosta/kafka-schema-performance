@@ -1,0 +1,25 @@
+version: 1
+title: Schema governance scorecard
+weight_max: 100
+criteria:
+  - id: compatibility_guarantees
+    label: Compatibility guarantees and accidental breakage modes
+    weight: 25
+    score: null
+    notes: Human or automated checklist; null until filled per release.
+  - id: registry_coupling
+    label: Registry coupling and subject strategy
+    weight: 25
+    score: null
+  - id: ci_integration
+    label: Breaking-change detection in CI / local
+    weight: 20
+    score: null
+  - id: discoverability
+    label: Discoverability of schemas and changelog
+    weight: 15
+    score: null
+  - id: polyglot_codegen
+    label: Polyglot codegen quality
+    weight: 15
+    score: null

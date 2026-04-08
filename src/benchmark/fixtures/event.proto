@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package com.example;
+
+message EventContext {
+  string device_id = 1;
+  string session_id = 2;
+  repeated string tags = 3;
+}
+
+message AnalyticsEvent {
+  string event_id = 1;
+  int64 ts_ms = 2;
+  string user_id = 3;
+  map<string, string> props = 4;
+  EventContext context = 5;
+  bytes payload_blob = 6;
+  string new_field = 7;
+}

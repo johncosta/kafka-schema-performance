@@ -1,0 +1,28 @@
+version: 1
+title: Maintainability rubric
+scale: 1-5
+criteria:
+  - id: debugging
+    label: Debugging and human-inspectability
+    weight: 20
+    score: null
+  - id: tooling
+    label: Tooling maturity (linters, IDE, ops)
+    weight: 20
+    score: null
+  - id: failure_modes
+    label: Operational failure modes and recovery
+    weight: 20
+    score: null
+  - id: onboarding
+    label: Onboarding and hiring familiarity
+    weight: 15
+    score: null
+  - id: migration
+    label: Migration path between formats
+    weight: 15
+    score: null
+  - id: supply_chain
+    label: Supply chain and dependency footprint
+    weight: 10
+    score: null

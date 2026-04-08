@@ -1,0 +1,29 @@
+{
+  "type": "record",
+  "name": "AnalyticsEvent",
+  "namespace": "com.example",
+  "fields": [
+    {"name": "event_id", "type": "string"},
+    {"name": "ts_ms", "type": "long"},
+    {"name": "user_id", "type": "string"},
+    {"name": "props", "type": {"type": "map", "values": "string"}},
+    {
+      "name": "context",
+      "type": [
+        "null",
+        {
+          "type": "record",
+          "name": "EventContext",
+          "fields": [
+            {"name": "device_id", "type": "string"},
+            {"name": "session_id", "type": "string"},
+            {"name": "tags", "type": {"type": "array", "items": "string"}}
+          ]
+        }
+      ],
+      "default": null
+    },
+    {"name": "payload_blob", "type": ["null", "bytes"], "default": null},
+    {"name": "new_field", "type": ["null", "string"], "default": null}
+  ]
+}
