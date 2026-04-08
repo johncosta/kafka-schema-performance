@@ -26,6 +26,33 @@ def main() -> None:
     app()
 
 
+def _parse_scenarios(value: str) -> list[PayloadProfile]:
+    """One profile, comma-separated list, or ``all`` (= small+medium+large)."""
+
+    raw = value.strip()
+    if not raw:
+        raise typer.BadParameter("scenario must not be empty")
+    lowered = raw.lower()
+    if lowered == "all":
+        return [
+            PayloadProfile.small,
+            PayloadProfile.medium,
+            PayloadProfile.large,
+        ]
+    if "," in raw:
+        parts = [p.strip() for p in raw.split(",") if p.strip()]
+        if not parts:
+            raise typer.BadParameter("empty scenario list")
+        try:
+            return [PayloadProfile(p) for p in parts]
+        except ValueError as e:
+            raise typer.BadParameter(str(e)) from e
+    try:
+        return [PayloadProfile(raw)]
+    except ValueError as e:
+        raise typer.BadParameter(str(e)) from e
+
+
 def _parse_formats(value: str) -> list[str]:
     if value.strip().lower() == "all":
         return ["avro", "protobuf", "json"]
@@ -47,7 +74,10 @@ def run_cmd(
         "small",
         "--scenario",
         "-s",
-        help="Payload profile: small | medium | large | evolution",
+        help=(
+            "Payload profile(s): small | medium | large | evolution | all "
+            "(small+medium+large) | comma-separated list"
+        ),
     ),
     tier: str = typer.Option(
         "S0",
@@ -86,10 +116,15 @@ def run_cmd(
             "(default: ./rubrics/maintainability.v1.yaml if present)"
         ),
     ),
+    tracemalloc_sample: bool = typer.Option(
+        False,
+        "--tracemalloc/--no-tracemalloc",
+        help="Optional one-shot tracemalloc peak after warmup (noisy; off by default)",
+    ),
 ) -> None:
     """Run benchmark matrix and write report.json (+ report.md)."""
 
-    profile = PayloadProfile(scenario)
+    profiles = _parse_scenarios(scenario)
     if tier not in ("S0", "S1"):
         raise typer.BadParameter("tier must be S0 or S1")
     tier_t: ScenarioTier = tier  # type: ignore[assignment]
@@ -115,7 +150,7 @@ def run_cmd(
             maint = default_m
 
     report = build_report(
-        profile=profile,
+        profiles=profiles,
         tier=tier_t,
         formats=fmt_list,
         compression=comp,  # type: ignore[arg-type]
@@ -124,6 +159,7 @@ def run_cmd(
         seed=seed,
         rubric_governance=str(gov) if gov else None,
         rubric_maintainability=str(maint) if maint else None,
+        tracemalloc_sample=tracemalloc_sample,
     )
     json_path, md_path = write_report_bundle(report, str(output_dir))
     typer.echo(f"Wrote {json_path}")

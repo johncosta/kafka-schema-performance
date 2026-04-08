@@ -18,9 +18,11 @@ pip install -e ".[dev]"
 
 ```bash
 ksp-bench run --scenario small --tier S0 --formats all --output-dir reports/
+# PRD-style matrix in one report: 3 payload profiles × all formats (S0)
+ksp-bench run --scenario all --tier S0 --formats all --output-dir reports/
 ```
 
-- **Profiles:** `small`, `medium`, `large`, `evolution` (Avro uses schema v1 → v2 for evolution).
+- **Profiles:** `small`, `medium`, `large`, `evolution`, **`all`** (runs small+medium+large), or a **comma-separated** list (e.g. `small,medium`). Evolution uses Avro schema v1 → v2 when format is Avro.
 - **Tiers:** `S0` codec only; `S1` adds **gzip** or **zstd** around the encoded bytes (`--compression`).
 - **Formats:** `all` or comma-separated `avro,protobuf,json`.
 
@@ -28,7 +30,7 @@ Rubrics under `rubrics/` are merged into `report.json` when those files exist (d
 
 Artifacts:
 
-- `report.json` — machine-readable results, environment versions, fixture checksum, optional rubrics.
+- `report.json` — machine-readable results (`report_version` 2: `payload_profiles` list + `payload_profile` on each result row), environment, fixture checksum, optional rubrics, optional `measurement` / `allocations` metadata.
 - `report.md` — short human-readable summary and layer-cake notes.
 
 ## Protobuf code generation

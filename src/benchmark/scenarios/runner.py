@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import tracemalloc
 from typing import Any, Literal, cast
 
 import yaml
@@ -11,13 +12,66 @@ from benchmark.codecs.json_codec import JsonCodec
 from benchmark.codecs.protobuf_codec import ProtobufCodec
 from benchmark.env import collect_environment
 from benchmark.fixtures.checksum import fixture_sha256
-from benchmark.generate.records import PayloadProfile
+from benchmark.generate.records import PayloadProfile, sample_event
 from benchmark.metrics.compress import CompressionAlg, compress, decompress
 from benchmark.metrics.stats import mb_per_second, summarize_times
 from benchmark.models.event import AnalyticsEvent
 from benchmark.report.render import render_markdown
 
 ScenarioTier = Literal["S0", "S1"]
+
+MEASUREMENT_MODEL: dict[str, Any] = {
+    "timer": "time.perf_counter (wall time per iteration)",
+    "threading_model": (
+        "single-threaded sequential loop (CPython); no worker pool — "
+        "CPU-bound codec work holds the GIL"
+    ),
+    "phases": {
+        "encode": (
+            "Wall time for serialize(domain→bytes). For S1, the timed "
+            "window includes compression immediately after encode in the "
+            "same iteration (see layer_cake)."
+        ),
+        "decode": (
+            "Wall time for decompress-if-S1 then deserialize(bytes→domain). "
+            "Schema validation is not separated; for Avro/protobuf/json it "
+            "is part of the decode path."
+        ),
+        "round_trip": (
+            "Single timer around encode (+ compress/decompress if S1) and "
+            "decode in one pass; not the sum of separate encode/decode means."
+        ),
+    },
+}
+
+
+def _tracemalloc_round_trip_peak(
+    codec: Codec,
+    event: AnalyticsEvent,
+    *,
+    tier: ScenarioTier,
+    compression: CompressionAlg,
+) -> dict[str, Any]:
+    """One post-warmup sample; tracemalloc is noisy — use for trends only."""
+
+    tracemalloc.start()
+    try:
+        raw = codec.encode(event)
+        if tier == "S1":
+            raw = compress(compression, raw)
+            raw = decompress(compression, raw)
+        _ = codec.decode(raw)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    return {
+        "peak_bytes_traced": peak,
+        "method": "tracemalloc",
+        "caveat": (
+            "Single sample after warmup; CPython allocator noise; not comparable "
+            "across processes or platforms"
+        ),
+    }
 
 
 def _select_codec(fmt: str, profile: PayloadProfile) -> Codec:
@@ -40,6 +94,7 @@ def bench_codec(
     compression: CompressionAlg,
     warmup: int,
     iterations: int,
+    tracemalloc_sample: bool = False,
 ) -> dict[str, Any]:
     encoded_last: bytes | None = None
     for _ in range(warmup):
@@ -87,6 +142,15 @@ def bench_codec(
     raw_size = len(raw_wire)
     comp_size = len(compressed_wire) if tier == "S1" else raw_size
 
+    allocations: dict[str, Any] | None = None
+    if tracemalloc_sample:
+        allocations = _tracemalloc_round_trip_peak(
+            codec,
+            event,
+            tier=tier,
+            compression=compression,
+        )
+
     return {
         "codec": codec.name,
         "tier": tier,
@@ -101,8 +165,12 @@ def bench_codec(
         | {
             "decode_mb_per_s": mb_per_second(dec_stats["mean_s"], raw_size),
         },
-        "round_trip": rt_stats,
+        "round_trip": rt_stats
+        | {
+            "round_trip_mb_per_s": mb_per_second(rt_stats["mean_s"], raw_size),
+        },
         "layer_cake": _layer_cake(tier, compression),
+        "allocations": allocations,
     }
 
 
@@ -138,7 +206,7 @@ def load_rubric(path: str) -> dict[str, Any]:
 
 def build_report(
     *,
-    profile: PayloadProfile,
+    profiles: list[PayloadProfile],
     tier: ScenarioTier,
     formats: list[str],
     compression: CompressionAlg,
@@ -147,28 +215,29 @@ def build_report(
     seed: int,
     rubric_governance: str | None,
     rubric_maintainability: str | None,
+    tracemalloc_sample: bool = False,
 ) -> dict[str, Any]:
-    from benchmark.generate.records import sample_event
-
-    event = sample_event(profile, seed)
-    rows = []
-    for fmt in formats:
-        codec = _select_codec(fmt, profile)
-        rows.append(
-            bench_codec(
+    rows: list[dict[str, Any]] = []
+    for profile in profiles:
+        event = sample_event(profile, seed)
+        for fmt in formats:
+            codec = _select_codec(fmt, profile)
+            row = bench_codec(
                 codec,
                 event,
                 tier=tier,
                 compression=compression,
                 warmup=warmup,
                 iterations=iterations,
+                tracemalloc_sample=tracemalloc_sample,
             )
-        )
+            row["payload_profile"] = profile.value
+            rows.append(row)
 
     report: dict[str, Any] = {
-        "report_version": 1,
+        "report_version": 2,
         "scenario": {
-            "payload_profile": profile.value,
+            "payload_profiles": [p.value for p in profiles],
             "tier": tier,
             "formats": formats,
             "warmup_iterations": warmup,
@@ -176,6 +245,7 @@ def build_report(
             "seed": seed,
             "compression": compression,
         },
+        "measurement": MEASUREMENT_MODEL,
         "environment": collect_environment(),
         "fixture_bundle_sha256": fixture_sha256(),
         "results": rows,

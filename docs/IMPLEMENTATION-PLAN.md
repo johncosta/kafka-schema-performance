@@ -133,6 +133,8 @@ Versioned JSON schema or Pydantic models for:
 
 **Exit:** MVP criterion (1) — single command runs **≥3 profiles × 3 formats** at S0; JSON + Markdown summary produced.
 
+**Delivered:** `--scenario all` (small+medium+large) or comma-separated profiles; `report_version` **2** with `scenario.payload_profiles` and per-row `payload_profile`; `round_trip_mb_per_s`; Markdown lists p50/p90/p99 and records/s + MB/s for encode/decode/round-trip; `measurement` block documents timer, threading (single-threaded GIL), and phase boundaries; optional `--tracemalloc` single-sample peak (best-effort). Multithreading left documented-only for CPython.
+
 ### Phase 3 — Size, compression, cost formulas
 
 - Per profile/format: mean/median/p95 **raw byte length**; same after **gzip** and **zstd** at declared levels.
