@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from benchmark.metrics.compress import DEFAULT_GZIP_COMPRESSLEVEL, DEFAULT_ZSTD_LEVEL
 from benchmark.metrics.stats import (
     mb_per_second,
     summarize_byte_lengths,
@@ -30,3 +31,8 @@ def test_summarize_byte_lengths_constant() -> None:
 def test_summarize_byte_lengths_empty() -> None:
     s = summarize_byte_lengths([])
     assert s["n"] == 0
+
+
+def test_compress_default_levels_constants() -> None:
+    assert DEFAULT_GZIP_COMPRESSLEVEL == 6
+    assert DEFAULT_ZSTD_LEVEL == 3

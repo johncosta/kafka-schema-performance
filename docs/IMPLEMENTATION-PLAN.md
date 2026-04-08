@@ -162,6 +162,8 @@ Versioned JSON schema or Pydantic models for:
 
 **Exit:** Clear S0 vs S1 comparison in report; no conflation of tiers.
 
+**Delivered:** Named defaults **`DEFAULT_GZIP_COMPRESSLEVEL`** / **`DEFAULT_ZSTD_LEVEL`**; **`_compress_s1_wire`** + CLI **`--s1-gzip-level`** / **`--s1-zstd-level`** for timed S1 path (separate from Phase-3 wire probes). Per-row **`s1_timed_compression`** (algorithm, levels used, sizes, ratio, note); **compressed-wire MB/s** fields on encode/decode/round-trip when S1; **`measurement.tier_s1_vs_s0`** narrative; **`scenario.s1`** metadata; Markdown **Tier S1** section and S1 throughput lines. **`report_version` 5**. Makefile CI smoke runs **S1** once.
+
 ### Phase 6 — S2 schema registry (optional integration)
 
 - **Cold vs warm:** timed path for “fetch schema by ID” with empty client cache vs steady-state.

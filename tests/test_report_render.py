@@ -24,3 +24,20 @@ def test_render_markdown_multi_profile_headings() -> None:
     assert "Measurement model" in md
     assert "Raw encoded size" in md
     assert "Compressed payload sizes" in md
+
+
+def test_render_markdown_s1_tier_section() -> None:
+    report = build_report(
+        profiles=[PayloadProfile.small],
+        tier="S1",
+        formats=["json"],
+        compression="zstd",
+        warmup=0,
+        iterations=1,
+        seed=0,
+        rubric_governance=None,
+        rubric_maintainability=None,
+    )
+    md = render_markdown(report)
+    assert "### Tier S1 (codec + compression)" in md
+    assert "S1 compression footprint" in md

@@ -7,6 +7,9 @@ import zstandard
 
 CompressionAlg = Literal["none", "gzip", "zstd"]
 
+DEFAULT_GZIP_COMPRESSLEVEL = 6
+DEFAULT_ZSTD_LEVEL = 3
+
 
 def compress(
     algorithm: CompressionAlg,
@@ -17,10 +20,10 @@ def compress(
     if algorithm == "none":
         return data
     if algorithm == "gzip":
-        lvl = 6 if level is None else level
+        lvl = DEFAULT_GZIP_COMPRESSLEVEL if level is None else level
         return gzip.compress(data, compresslevel=lvl)
     if algorithm == "zstd":
-        lvl = 3 if level is None else level
+        lvl = DEFAULT_ZSTD_LEVEL if level is None else level
         cctx = zstandard.ZstdCompressor(level=lvl)
         return cctx.compress(data)
     raise ValueError(f"unknown compression: {algorithm!r}")
