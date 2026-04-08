@@ -23,3 +23,5 @@ test: $(PY)
 	test -f /tmp/ksp-report/report.json
 	$(VENV)/bin/ksp-bench run --scenario small --tier S1 --compression zstd --formats all --warmup 1 --iterations 3 --output-dir /tmp/ksp-s1
 	test -f /tmp/ksp-s1/report.json
+	$(VENV)/bin/ksp-bench run --scenario small --tier S2 --formats json --warmup 1 --iterations 3 --output-dir /tmp/ksp-s2
+	test -f /tmp/ksp-s2/report.json

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import time
 import tracemalloc
 from pathlib import Path
@@ -29,11 +30,18 @@ from benchmark.metrics.stats import (
     summarize_times,
 )
 from benchmark.models.event import AnalyticsEvent
+from benchmark.registry_mock import (
+    MockRegistryServer,
+    http_get_cold,
+    http_get_on_connection,
+    prime_connection,
+    schema_id_path,
+)
 from benchmark.report.limitations import limitations_for_report
 from benchmark.report.regression import regression_check_against_baseline_file
 from benchmark.report.render import render_markdown
 
-ScenarioTier = Literal["S0", "S1"]
+ScenarioTier = Literal["S0", "S1", "S2"]
 
 MEASUREMENT_MODEL: dict[str, Any] = {
     "timer": "time.perf_counter (wall time per iteration)",
@@ -56,12 +64,23 @@ MEASUREMENT_MODEL: dict[str, Any] = {
             "Single timer around encode (+ compress/decompress if S1) and "
             "decode in one pass; not the sum of separate encode/decode means."
         ),
+        "s2_registry_fetch": (
+            "Separate timers: cold = new TCP+HTTP per iteration; warm = one "
+            "HTTPConnection reused. Encode/round-trip include a warm registry "
+            "GET before serialize (steady-state producer proxy)."
+        ),
     },
     "tier_s1_vs_s0": (
         "S1 includes compressor CPU in the same timed windows as the codec. "
         "S0 is codec-only. Compare by re-running the same scenario/seed/formats "
         "with --tier S0 and --tier S1; do not compare S1 rows to S0 from different "
         "reports without matching scenario metadata."
+    ),
+    "tier_s2_registry": (
+        "S2 adds loopback mock Schema Registry GET /schemas/ids/{id} before "
+        "encode in timed encode and round-trip paths (HTTP keep-alive). "
+        "Cold vs warm fetch micro-benchmarks are environment-specific; do not "
+        "compare to S0/S1 without separating registry overhead."
     ),
 }
 
@@ -130,6 +149,191 @@ def _select_codec(fmt: str, profile: PayloadProfile) -> Codec:
     raise ValueError(f"unknown format: {fmt!r}")
 
 
+def _bench_codec_s2(
+    codec: Codec,
+    event: AnalyticsEvent,
+    *,
+    compression: CompressionAlg,
+    warmup: int,
+    iterations: int,
+    tracemalloc_sample: bool,
+    gzip_level: int,
+    zstd_level: int,
+    include_confluent_envelope: bool,
+    confluent_prefix_bytes: int,
+    registry_host: str,
+    registry_port: int,
+    registry_schema_id: int,
+) -> dict[str, Any]:
+    """S2: S0 codec path + mock registry GET before encode (warm keep-alive)."""
+
+    reg_path = schema_id_path(registry_schema_id)
+    encoded_last: bytes | None = None
+    for _ in range(warmup):
+        raw = codec.encode(event)
+        _ = codec.decode(raw)
+        encoded_last = codec.encode(event)
+
+    if encoded_last is None:
+        encoded_last = codec.encode(event)
+    raw_wire = encoded_last
+    raw_size = len(raw_wire)
+    comp_size = raw_size
+
+    cold_times: list[float] = []
+    for _ in range(iterations):
+        t0 = time.perf_counter()
+        http_get_cold(registry_host, registry_port, reg_path)
+        cold_times.append(time.perf_counter() - t0)
+
+    warm_fetch_times: list[float] = []
+    wconn = http.client.HTTPConnection(
+        registry_host,
+        registry_port,
+        timeout=60,
+    )
+    try:
+        prime_connection(wconn, reg_path)
+        for _ in range(iterations):
+            t0 = time.perf_counter()
+            http_get_on_connection(wconn, reg_path)
+            warm_fetch_times.append(time.perf_counter() - t0)
+    finally:
+        wconn.close()
+
+    enc_times: list[float] = []
+    wire_len_samples: list[int] = []
+    enc_conn = http.client.HTTPConnection(
+        registry_host,
+        registry_port,
+        timeout=60,
+    )
+    try:
+        prime_connection(enc_conn, reg_path)
+        for _ in range(iterations):
+            t0 = time.perf_counter()
+            http_get_on_connection(enc_conn, reg_path)
+            raw = codec.encode(event)
+            wire_len_samples.append(len(raw))
+            enc_times.append(time.perf_counter() - t0)
+    finally:
+        enc_conn.close()
+
+    decode_blob = raw_wire
+    dec_times: list[float] = []
+    for _ in range(iterations):
+        t0 = time.perf_counter()
+        _ = codec.decode(decode_blob)
+        dec_times.append(time.perf_counter() - t0)
+
+    rt_times: list[float] = []
+    rt_conn = http.client.HTTPConnection(
+        registry_host,
+        registry_port,
+        timeout=60,
+    )
+    try:
+        prime_connection(rt_conn, reg_path)
+        for _ in range(iterations):
+            t0 = time.perf_counter()
+            http_get_on_connection(rt_conn, reg_path)
+            raw = codec.encode(event)
+            _ = codec.decode(raw)
+            rt_times.append(time.perf_counter() - t0)
+    finally:
+        rt_conn.close()
+
+    cold_stats = summarize_times(cold_times)
+    warm_fetch_stats = summarize_times(warm_fetch_times)
+    enc_stats = summarize_times(enc_times)
+    dec_stats = summarize_times(dec_times)
+    rt_stats = summarize_times(rt_times)
+
+    raw_len_stats = summarize_byte_lengths(wire_len_samples)
+    gzip_blob = compress("gzip", raw_wire, level=gzip_level)
+    zstd_blob = compress("zstd", raw_wire, level=zstd_level)
+    mean_raw = float(raw_len_stats["mean"])
+
+    def _ratio_to_raw(compressed_len: int) -> float:
+        if mean_raw <= 0:
+            return float("nan")
+        return compressed_len / mean_raw
+
+    compressed_payload = {
+        "gzip": {
+            "compresslevel": gzip_level,
+            "bytes": len(gzip_blob),
+            "ratio_to_raw_mean": _ratio_to_raw(len(gzip_blob)),
+        },
+        "zstd": {
+            "level": zstd_level,
+            "bytes": len(zstd_blob),
+            "ratio_to_raw_mean": _ratio_to_raw(len(zstd_blob)),
+        },
+    }
+    kafka_shaped: dict[str, Any] | None = None
+    if include_confluent_envelope:
+        kafka_shaped = confluent_value_envelope(
+            payload_bytes=raw_size,
+            prefix_bytes=confluent_prefix_bytes,
+        )
+    derived_cost = derived_cost_model(mean_raw)
+
+    allocations: dict[str, Any] | None = None
+    if tracemalloc_sample:
+        allocations = _tracemalloc_round_trip_peak(
+            codec,
+            event,
+            tier="S2",
+            compression=compression,
+            s1_gzip_level=None,
+            s1_zstd_level=None,
+        )
+
+    enc_block: dict[str, Any] = enc_stats | {
+        "encode_mb_per_s": mb_per_second(enc_stats["mean_s"], raw_size),
+    }
+    dec_block: dict[str, Any] = dec_stats | {
+        "decode_mb_per_s": mb_per_second(dec_stats["mean_s"], raw_size),
+    }
+    rt_block: dict[str, Any] = rt_stats | {
+        "round_trip_mb_per_s": mb_per_second(rt_stats["mean_s"], raw_size),
+    }
+
+    s2_registry = {
+        "implementation": "localhost_threading_http_mock",
+        "api_style": "confluent_get_schema_by_id",
+        "schema_id": registry_schema_id,
+        "registry_host": registry_host,
+        "registry_port": registry_port,
+        "fetch_new_tcp_each_iteration": cold_stats,
+        "fetch_reused_connection": warm_fetch_stats,
+        "note": (
+            "Cold path = new http.client.HTTPConnection per iteration (TCP+HTTP). "
+            "Warm path = single connection, repeated GETs. Encode/round-trip use a "
+            "primed connection and one GET before each serialize (producer proxy)."
+        ),
+    }
+
+    return {
+        "codec": codec.name,
+        "tier": "S2",
+        "compression": "none",
+        "raw_size_bytes": raw_size,
+        "compressed_size_bytes": comp_size,
+        "encode": enc_block,
+        "decode": dec_block,
+        "round_trip": rt_block,
+        "raw_encoded_bytes": raw_len_stats,
+        "compressed_payload_bytes": compressed_payload,
+        "kafka_shaped": kafka_shaped,
+        "derived_cost": derived_cost,
+        "layer_cake": _layer_cake("S2", compression),
+        "allocations": allocations,
+        "s2_registry": s2_registry,
+    }
+
+
 def bench_codec(
     codec: Codec,
     event: AnalyticsEvent,
@@ -145,7 +349,28 @@ def bench_codec(
     confluent_prefix_bytes: int = 5,
     s1_gzip_level: int | None = None,
     s1_zstd_level: int | None = None,
+    registry_host: str = "",
+    registry_port: int = 0,
+    registry_schema_id: int = 1,
 ) -> dict[str, Any]:
+    if tier == "S2":
+        if not registry_host or registry_port <= 0:
+            raise ValueError("tier S2 requires registry_host and registry_port")
+        return _bench_codec_s2(
+            codec,
+            event,
+            compression=compression,
+            warmup=warmup,
+            iterations=iterations,
+            tracemalloc_sample=tracemalloc_sample,
+            gzip_level=gzip_level,
+            zstd_level=zstd_level,
+            include_confluent_envelope=include_confluent_envelope,
+            confluent_prefix_bytes=confluent_prefix_bytes,
+            registry_host=registry_host,
+            registry_port=registry_port,
+            registry_schema_id=registry_schema_id,
+        )
     encoded_last: bytes | None = None
     for _ in range(warmup):
         raw = codec.encode(event)
@@ -345,6 +570,22 @@ def _layer_cake(tier: ScenarioTier, compression: CompressionAlg) -> dict[str, An
                 "TLS",
             ],
         }
+    if tier == "S2":
+        return {
+            "included": [
+                "codec encode/decode (in-process)",
+                "mock schema registry HTTP GET /schemas/ids/{id} on 127.0.0.1",
+                "timed cold path: new TCP connection per fetch iteration",
+                "timed warm path: HTTP keep-alive (one connection, repeated GETs)",
+                "encode and round-trip: primed connection + GET before each serialize",
+            ],
+            "excluded": [
+                "TLS",
+                "real Confluent/Apicurio/Glue latency",
+                "Kafka client",
+                "compression in timed codec path",
+            ],
+        }
     return {
         "included": [
             "codec encode/decode",
@@ -396,29 +637,41 @@ def build_report(
     s1_zstd_level: int | None = None,
     baseline_report_path: str | None = None,
     regression_warn_ratio: float = 0.2,
+    registry_schema_id: int = 1,
 ) -> dict[str, Any]:
+    mock_registry: MockRegistryServer | None = None
+    if tier == "S2":
+        mock_registry = MockRegistryServer.start(schema_id=registry_schema_id)
+
     rows: list[dict[str, Any]] = []
-    for profile in profiles:
-        event = sample_event(profile, seed)
-        for fmt in formats:
-            codec = _select_codec(fmt, profile)
-            row = bench_codec(
-                codec,
-                event,
-                tier=tier,
-                compression=compression,
-                warmup=warmup,
-                iterations=iterations,
-                tracemalloc_sample=tracemalloc_sample,
-                gzip_level=gzip_level,
-                zstd_level=zstd_level,
-                include_confluent_envelope=include_confluent_envelope,
-                confluent_prefix_bytes=confluent_prefix_bytes,
-                s1_gzip_level=s1_gzip_level,
-                s1_zstd_level=s1_zstd_level,
-            )
-            row["payload_profile"] = profile.value
-            rows.append(row)
+    try:
+        for profile in profiles:
+            event = sample_event(profile, seed)
+            for fmt in formats:
+                codec = _select_codec(fmt, profile)
+                row = bench_codec(
+                    codec,
+                    event,
+                    tier=tier,
+                    compression=compression,
+                    warmup=warmup,
+                    iterations=iterations,
+                    tracemalloc_sample=tracemalloc_sample,
+                    gzip_level=gzip_level,
+                    zstd_level=zstd_level,
+                    include_confluent_envelope=include_confluent_envelope,
+                    confluent_prefix_bytes=confluent_prefix_bytes,
+                    s1_gzip_level=s1_gzip_level,
+                    s1_zstd_level=s1_zstd_level,
+                    registry_host=mock_registry.host if mock_registry else "",
+                    registry_port=mock_registry.port if mock_registry else 0,
+                    registry_schema_id=registry_schema_id,
+                )
+                row["payload_profile"] = profile.value
+                rows.append(row)
+    finally:
+        if mock_registry is not None:
+            mock_registry.stop()
 
     rubric_index: list[str] = []
 
@@ -451,9 +704,20 @@ def build_report(
                 "size_and_cost gzip/zstd are separate probes on raw wire."
             ),
         }
+    if tier == "S2":
+        scenario_block["s2"] = {
+            "registry_implementation": "MockRegistryServer",
+            "bind": "127.0.0.1 (ephemeral port per run)",
+            "schema_id": registry_schema_id,
+            "api": "GET /schemas/ids/{id} (Confluent-style JSON)",
+            "note": (
+                "Loopback mock only; cold vs warm fetch stats are "
+                "environment-specific, not real SR latency."
+            ),
+        }
 
     report: dict[str, Any] = {
-        "report_version": 6,
+        "report_version": 7,
         "scenario": scenario_block,
         "measurement": MEASUREMENT_MODEL,
         "environment": collect_environment(),

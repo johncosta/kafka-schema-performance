@@ -148,6 +148,23 @@ def render_markdown(report: dict[str, Any]) -> str:
                 "",
             ]
         )
+    s2_scen = scen.get("s2")
+    if scen.get("tier") == "S2" and isinstance(s2_scen, dict):
+        lines.extend(
+            [
+                "### Tier S2 (codec + mock schema registry)",
+                "",
+                f"- **Registry:** {s2_scen.get('registry_implementation')} on "
+                f"{s2_scen.get('bind')}",
+                f"- **Schema id:** {s2_scen.get('schema_id')}",
+                f"- **API:** {s2_scen.get('api')}",
+                f"- **Note:** {s2_scen.get('note', '')}",
+                "",
+                "*Cold vs warm fetch timings appear per codec row "
+                "under **S2 registry**.*",
+                "",
+            ]
+        )
     sz = scen.get("size_and_cost")
     if isinstance(sz, dict):
         lines.extend(
@@ -185,6 +202,12 @@ def render_markdown(report: dict[str, Any]) -> str:
             lines.append("**S0 vs S1:**")
             lines.append("")
             lines.append(tier_note)
+            lines.append("")
+        tier_s2 = meas.get("tier_s2_registry")
+        if isinstance(tier_s2, str) and tier_s2:
+            lines.append("**S2 (registry):**")
+            lines.append("")
+            lines.append(tier_s2)
             lines.append("")
     lines.extend(
         [
@@ -271,6 +294,23 @@ def render_markdown(report: dict[str, Any]) -> str:
                     f"{_fmt_mb_s(rt['round_trip_compressed_wire_mb_per_s'])}",
                 )
                 lines.append("")
+            s2r = row.get("s2_registry")
+            if isinstance(s2r, dict):
+                fc = s2r.get("fetch_new_tcp_each_iteration")
+                fw = s2r.get("fetch_reused_connection")
+                if isinstance(fc, dict) and isinstance(fw, dict):
+                    cold_m = _fmt_sci(float(fc.get("mean_s", float("nan"))))
+                    warm_m = _fmt_sci(float(fw.get("mean_s", float("nan"))))
+                    lines.extend(
+                        [
+                            "**S2 registry (loopback mock):**",
+                            "",
+                            f"- Fetch cold (new TCP each): mean {cold_m} s",
+                            f"- Fetch warm (reuse connection): mean {warm_m} s",
+                            f"- *{s2r.get('note', '')}*",
+                            "",
+                        ]
+                    )
             s1c = row.get("s1_timed_compression")
             if isinstance(s1c, dict):
                 ratio = s1c.get("ratio_compressed_to_raw")

@@ -23,7 +23,7 @@ ksp-bench run --scenario all --tier S0 --formats all --output-dir reports/
 ```
 
 - **Profiles:** `small`, `medium`, `large`, `evolution`, **`all`** (runs small+medium+large), or a **comma-separated** list (e.g. `small,medium`). Evolution uses Avro schema v1 → v2 when format is Avro.
-- **Tiers:** `S0` codec only; `S1` times **encode→compress** and **decompress→decode** with **`--compression gzip|zstd`** (levels: **`--s1-gzip-level`** / **`--s1-zstd-level`**, defaults 6 / 3). Phase-3 **`--gzip-level` / `--zstd-level`** remain separate **size probes** on raw wire.
+- **Tiers:** `S0` codec only; `S1` times **encode→compress** and **decompress→decode** with **`--compression gzip|zstd`** (levels: **`--s1-gzip-level`** / **`--s1-zstd-level`**, defaults 6 / 3). **`S2`** (Phase 6) runs a **loopback mock** Schema Registry (`GET /schemas/ids/{id}`) and times **cold** (new TCP per fetch) vs **warm** (HTTP keep-alive) plus encode/round-trip with a warm GET before serialize; use **`--registry-schema-id`**. Phase-3 **`--gzip-level` / `--zstd-level`** remain separate **size probes** on raw wire (S2 ignores compression for timed codec path).
 - **Formats:** `all` or comma-separated `avro,protobuf,json`. The CLI default is **`all`** (three codecs). If you pass e.g. **`--formats json`**, only that codec appears in `report.json` / `report.md`. Details: [Avro](#avro), [Protobuf](#protocol-buffers-protobuf).
 - **Wire sizes (Phase 3):** `--gzip-level`, `--zstd-level` control size probes; optional `--confluent-envelope` / `--confluent-prefix-bytes` for Kafka-shaped value totals (independent of S1 timing compression).
 
@@ -31,7 +31,7 @@ Rubrics under `rubrics/` are merged into `report.json` when those files exist (d
 
 Artifacts:
 
-- `report.json` — machine-readable results (`report_version` **6**: adds **`limitations`**, **`artifact_integrity`** (sorted `pip freeze` + SHA-256), optional **`regression_check`** when **`--baseline-report`** is set; still includes v5 S1 fields, rubrics, sizes), environment, fixture checksum, `measurement` / `allocations`.
+- `report.json` — machine-readable results (`report_version` **7**: optional **`scenario.s2`** and per-row **`s2_registry`** for tier S2; v6 adds **`limitations`**, **`artifact_integrity`**, **`regression_check`**; v5 S1 and rubrics retained), environment, fixture checksum, `measurement` / `allocations`.
 - `report.md` — short human-readable summary, layer-cake notes, and Phase-8 appendix (limitations, artifact integrity, regression when enabled).
 
 Optional regression hints (same scenario fingerprint as the baseline `report.json`):
@@ -77,7 +77,7 @@ make lint      # ruff, black --check, mypy (uses .venv)
 make test      # pytest + CLI smoke (same as CI)
 ```
 
-`make test` runs **`ksp-bench`** with **`--formats all`**, so smoke reports under `/tmp/ksp-report` and `/tmp/ksp-s1` include **avro**, **protobuf**, and **json** (not JSON-only).
+`make test` runs **`ksp-bench`** with **`--formats all`** for S0/S1 smokes, plus a short **S2** smoke (`json`), so reports under `/tmp/ksp-report`, `/tmp/ksp-s1`, and `/tmp/ksp-s2` exercise those tiers.
 
 To use another Python for creating the venv, run `python3.12 -m venv .venv` yourself, then `make install` (the existing `.venv` is reused).
 
@@ -92,5 +92,5 @@ pytest -q
 
 ## Scope limits (today)
 
-- No live **schema registry** or **Kafka** client in the default path; tiers **S2–S4** are future work.
+- **S2** is an optional **loopback mock** Schema Registry (`--tier S2`), not a live Confluent/Apicurio deployment. No **Kafka** client or broker in the default path; **S3–S4** remain future work for real producer/consumer paths.
 - Governance and maintainability appear as **YAML rubrics** in reports, not auto-scored from benchmarks.
