@@ -143,6 +143,8 @@ Versioned JSON schema or Pydantic models for:
 
 **Exit:** MVP criterion (2) partial — size + compressed + tier labels; cost narrative present.
 
+**Delivered:** Per codec row: `raw_encoded_bytes` (mean/median/p95 over timed encodes), `compressed_payload_bytes` for **gzip** and **zstd** at declared levels (scenario `size_and_cost`), ratios vs raw mean; optional `kafka_shaped` via Confluent-style value prefix (`--confluent-envelope`, configurable `--confluent-prefix-bytes`); `derived_cost` with PRD section 6.2 formula strings and ±20% mean-wire span. `report_version` **3**. Markdown summarizes the same.
+
 ### Phase 4 — Rubrics (governance & maintainability)
 
 - Versioned YAML under `rubrics/` with **weights**, criteria, and **evidence prompts** (checklist, not synthetic timings).

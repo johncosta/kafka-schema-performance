@@ -23,6 +23,12 @@ def _fmt_mb_s(x: float) -> str:
     return f"{x:.2f}"
 
 
+def _fmt_ratio(x: float) -> str:
+    if math.isnan(x):
+        return "nan"
+    return f"{x:.3f}"
+
+
 def _scenario_profiles(scen: dict[str, Any]) -> list[str]:
     p = scen.get("payload_profiles")
     if isinstance(p, list) and p:
@@ -49,6 +55,20 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- **Seed:** {scen['seed']}",
         "",
     ]
+    sz = scen.get("size_and_cost")
+    if isinstance(sz, dict):
+        lines.extend(
+            [
+                "### Size & cost settings",
+                "",
+                f"- **gzip compresslevel (size probe):** "
+                f"{sz.get('gzip_compresslevel')}",
+                f"- **zstd level (size probe):** {sz.get('zstd_level')}",
+                f"- **Confluent value prefix in report:** "
+                f"{sz.get('include_confluent_envelope')}",
+                "",
+            ]
+        )
     meas = report.get("measurement")
     if meas:
         lines.extend(
@@ -125,6 +145,70 @@ def render_markdown(report: dict[str, Any]) -> str:
                     "",
                 ]
             )
+            raw_enc = row.get("raw_encoded_bytes")
+            if isinstance(raw_enc, dict) and raw_enc.get("n"):
+                lines.extend(
+                    [
+                        "**Raw encoded size (per timed encode):**",
+                        f"- mean / median / p95 (bytes): "
+                        f"{float(raw_enc['mean']):.1f} / "
+                        f"{float(raw_enc['median']):.1f} / "
+                        f"{float(raw_enc['p95']):.1f} (n={raw_enc['n']})",
+                        "",
+                    ]
+                )
+            cp = row.get("compressed_payload_bytes")
+            if isinstance(cp, dict):
+                gz = cp.get("gzip")
+                zst = cp.get("zstd")
+                if isinstance(gz, dict) and isinstance(zst, dict):
+                    gz_ratio = _fmt_ratio(
+                        float(gz.get("ratio_to_raw_mean", float("nan"))),
+                    )
+                    zs_ratio = _fmt_ratio(
+                        float(zst.get("ratio_to_raw_mean", float("nan"))),
+                    )
+                    lines.extend(
+                        [
+                            "**Compressed payload sizes (full raw wire):**",
+                            f"- gzip (level {gz.get('compresslevel')}): "
+                            f"{gz.get('bytes')} B (ratio× raw mean {gz_ratio})",
+                            f"- zstd (level {zst.get('level')}): "
+                            f"{zst.get('bytes')} B (ratio× raw mean {zs_ratio})",
+                            "",
+                        ]
+                    )
+            ks = row.get("kafka_shaped")
+            if isinstance(ks, dict):
+                lines.extend(
+                    [
+                        "**Kafka-shaped value (Confluent prefix + payload):**",
+                        f"- {ks.get('total_value_bytes')} B total "
+                        f"({ks.get('prefix_bytes')} B prefix + "
+                        f"{ks.get('payload_bytes')} B payload)",
+                        "",
+                    ]
+                )
+            dc = row.get("derived_cost")
+            if isinstance(dc, dict):
+                lines.append("**Derived cost (illustrative, PRD section 6.2):**")
+                lines.append("")
+                rf = dc.get("reference_formulas")
+                if isinstance(rf, dict):
+                    for k, v in rf.items():
+                        lines.append(f"- `{k}`: {v}")
+                span = dc.get("illustrative_mean_wire_bytes_span")
+                if isinstance(span, dict):
+                    low = float(span.get("low", float("nan")))
+                    high = float(span.get("high", float("nan")))
+                    pct = dc.get("sensitivity_payload_plus_minus_pct", 20)
+                    lines.append(
+                        f"- ±{pct}% mean-wire span (bytes): {low:.1f} … {high:.1f}"
+                    )
+                note = dc.get("notes")
+                if note:
+                    lines.append(f"- Note: {note}")
+                lines.append("")
             alloc = row.get("allocations")
             if alloc:
                 lines.append("**Allocations (best-effort):**")

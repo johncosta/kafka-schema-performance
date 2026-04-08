@@ -14,7 +14,13 @@ from benchmark.env import collect_environment
 from benchmark.fixtures.checksum import fixture_sha256
 from benchmark.generate.records import PayloadProfile, sample_event
 from benchmark.metrics.compress import CompressionAlg, compress, decompress
-from benchmark.metrics.stats import mb_per_second, summarize_times
+from benchmark.metrics.cost import derived_cost_model
+from benchmark.metrics.sizes import confluent_value_envelope
+from benchmark.metrics.stats import (
+    mb_per_second,
+    summarize_byte_lengths,
+    summarize_times,
+)
 from benchmark.models.event import AnalyticsEvent
 from benchmark.report.render import render_markdown
 
@@ -95,6 +101,10 @@ def bench_codec(
     warmup: int,
     iterations: int,
     tracemalloc_sample: bool = False,
+    gzip_level: int = 6,
+    zstd_level: int = 3,
+    include_confluent_envelope: bool = False,
+    confluent_prefix_bytes: int = 5,
 ) -> dict[str, Any]:
     encoded_last: bytes | None = None
     for _ in range(warmup):
@@ -111,9 +121,11 @@ def bench_codec(
     compressed_wire = compress(compression, raw_wire) if tier == "S1" else raw_wire
 
     enc_times: list[float] = []
+    wire_len_samples: list[int] = []
     for _ in range(iterations):
         t0 = time.perf_counter()
         raw = codec.encode(event)
+        wire_len_samples.append(len(raw))
         if tier == "S1":
             _ = compress(compression, raw)
         enc_times.append(time.perf_counter() - t0)
@@ -142,6 +154,36 @@ def bench_codec(
     raw_size = len(raw_wire)
     comp_size = len(compressed_wire) if tier == "S1" else raw_size
 
+    raw_len_stats = summarize_byte_lengths(wire_len_samples)
+    gzip_blob = compress("gzip", raw_wire, level=gzip_level)
+    zstd_blob = compress("zstd", raw_wire, level=zstd_level)
+    mean_raw = float(raw_len_stats["mean"])
+
+    def _ratio_to_raw(compressed_len: int) -> float:
+        if mean_raw <= 0:
+            return float("nan")
+        return compressed_len / mean_raw
+
+    compressed_payload = {
+        "gzip": {
+            "compresslevel": gzip_level,
+            "bytes": len(gzip_blob),
+            "ratio_to_raw_mean": _ratio_to_raw(len(gzip_blob)),
+        },
+        "zstd": {
+            "level": zstd_level,
+            "bytes": len(zstd_blob),
+            "ratio_to_raw_mean": _ratio_to_raw(len(zstd_blob)),
+        },
+    }
+    kafka_shaped: dict[str, Any] | None = None
+    if include_confluent_envelope:
+        kafka_shaped = confluent_value_envelope(
+            payload_bytes=raw_size,
+            prefix_bytes=confluent_prefix_bytes,
+        )
+    derived_cost = derived_cost_model(mean_raw)
+
     allocations: dict[str, Any] | None = None
     if tracemalloc_sample:
         allocations = _tracemalloc_round_trip_peak(
@@ -169,6 +211,10 @@ def bench_codec(
         | {
             "round_trip_mb_per_s": mb_per_second(rt_stats["mean_s"], raw_size),
         },
+        "raw_encoded_bytes": raw_len_stats,
+        "compressed_payload_bytes": compressed_payload,
+        "kafka_shaped": kafka_shaped,
+        "derived_cost": derived_cost,
         "layer_cake": _layer_cake(tier, compression),
         "allocations": allocations,
     }
@@ -216,6 +262,10 @@ def build_report(
     rubric_governance: str | None,
     rubric_maintainability: str | None,
     tracemalloc_sample: bool = False,
+    gzip_level: int = 6,
+    zstd_level: int = 3,
+    include_confluent_envelope: bool = False,
+    confluent_prefix_bytes: int = 5,
 ) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     for profile in profiles:
@@ -230,12 +280,16 @@ def build_report(
                 warmup=warmup,
                 iterations=iterations,
                 tracemalloc_sample=tracemalloc_sample,
+                gzip_level=gzip_level,
+                zstd_level=zstd_level,
+                include_confluent_envelope=include_confluent_envelope,
+                confluent_prefix_bytes=confluent_prefix_bytes,
             )
             row["payload_profile"] = profile.value
             rows.append(row)
 
     report: dict[str, Any] = {
-        "report_version": 2,
+        "report_version": 3,
         "scenario": {
             "payload_profiles": [p.value for p in profiles],
             "tier": tier,
@@ -244,6 +298,14 @@ def build_report(
             "timed_iterations": iterations,
             "seed": seed,
             "compression": compression,
+            "size_and_cost": {
+                "gzip_compresslevel": gzip_level,
+                "zstd_level": zstd_level,
+                "include_confluent_envelope": include_confluent_envelope,
+                "confluent_prefix_bytes": (
+                    confluent_prefix_bytes if include_confluent_envelope else None
+                ),
+            },
         },
         "measurement": MEASUREMENT_MODEL,
         "environment": collect_environment(),
