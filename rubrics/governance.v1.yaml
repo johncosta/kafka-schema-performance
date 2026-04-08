@@ -1,3 +1,4 @@
+rubric_id: governance.v1
 version: 1
 title: Schema governance scorecard
 weight_max: 100
@@ -7,19 +8,37 @@ criteria:
     weight: 25
     score: null
     notes: Human or automated checklist; null until filled per release.
+    evidence_prompt: |
+      - Document compatibility mode(s) in use (BACKWARD, FORWARD, FULL, etc.).
+      - List two realistic schema changes and whether each is allowed or rejected.
+      - Where do accidental breakages typically surface (producer, consumer, registry)?
   - id: registry_coupling
     label: Registry coupling and subject strategy
     weight: 25
     score: null
+    evidence_prompt: |
+      - What registry (or process) owns schema truth? Subject naming strategy?
+      - How is schema ID propagated on the wire (e.g. Confluent framing)?
+      - What breaks if the registry is unavailable for a deploy window?
   - id: ci_integration
     label: Breaking-change detection in CI / local
     weight: 20
     score: null
+    evidence_prompt: |
+      - Is there an automated compat check in CI for this schema?
+      - Can a developer run the same check locally in under ~60 seconds?
+      - Link or command used for the check (if applicable).
   - id: discoverability
     label: Discoverability of schemas and changelog
     weight: 15
     score: null
+    evidence_prompt: |
+      - Where does a new engineer find the canonical schema and its history?
+      - Is there a changelog or versioning story beyond “latest in registry”?
   - id: polyglot_codegen
     label: Polyglot codegen quality
     weight: 15
     score: null
+    evidence_prompt: |
+      - Which languages consume this schema today? How is code generated or validated?
+      - Any known sharp edges (nullable maps, unions, JSON Schema ambiguity)?

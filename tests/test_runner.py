@@ -73,7 +73,7 @@ def test_build_report_multi_profile_matrix() -> None:
         rubric_governance=None,
         rubric_maintainability=None,
     )
-    assert report["report_version"] == 3
+    assert report["report_version"] == 4
     assert report["scenario"]["payload_profiles"] == ["small", "medium", "large"]
     assert len(report["results"]) == 3
     assert {row["payload_profile"] for row in report["results"]} == {

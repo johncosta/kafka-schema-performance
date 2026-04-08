@@ -27,11 +27,11 @@ ksp-bench run --scenario all --tier S0 --formats all --output-dir reports/
 - **Formats:** `all` or comma-separated `avro,protobuf,json`.
 - **Wire sizes (Phase 3):** `--gzip-level`, `--zstd-level` control size probes; optional `--confluent-envelope` / `--confluent-prefix-bytes` for Kafka-shaped value totals (independent of S1 timing compression).
 
-Rubrics under `rubrics/` are merged into `report.json` when those files exist (default discovery from the current working directory).
+Rubrics under `rubrics/` are merged into `report.json` when those files exist (default discovery from the current working directory). Each embedded rubric includes a pinned **`rubric_ref`** (e.g. `governance.v1`); **`rubric_index`** lists refs in the report. **`report.md`** includes an **appendix** with weights, checklist **evidence prompts**, and space for human scores.
 
 Artifacts:
 
-- `report.json` — machine-readable results (`report_version` 3: adds per-row wire-size stats, gzip/zstd size probes, optional Kafka-shaped prefix totals, `derived_cost`; see `scenario.size_and_cost`), environment, fixture checksum, optional rubrics, `measurement` / `allocations`.
+- `report.json` — machine-readable results (`report_version` **4**: adds `rubric_index` and enriched rubric blocks with `rubric_ref`; v3 fields retained: wire sizes, compression probes, `derived_cost`, etc.), environment, fixture checksum, `measurement` / `allocations`.
 - `report.md` — short human-readable summary and layer-cake notes.
 
 ## Protobuf code generation

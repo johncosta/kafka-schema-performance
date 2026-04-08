@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import tracemalloc
+from pathlib import Path
 from typing import Any, Literal, cast
 
 import yaml
@@ -250,6 +251,18 @@ def load_rubric(path: str) -> dict[str, Any]:
         return cast(dict[str, Any], data)
 
 
+def embed_rubric(path: str) -> dict[str, Any]:
+    """Load YAML and pin ``rubric_ref`` + ``source_file`` for report JSON / appendix."""
+
+    p = Path(path)
+    raw = load_rubric(path)
+    ref = str(raw.get("rubric_id") or p.stem)
+    merged: dict[str, Any] = {"source_file": p.name}
+    merged.update(raw)
+    merged["rubric_ref"] = ref
+    return merged
+
+
 def build_report(
     *,
     profiles: list[PayloadProfile],
@@ -288,8 +301,10 @@ def build_report(
             row["payload_profile"] = profile.value
             rows.append(row)
 
+    rubric_index: list[str] = []
+
     report: dict[str, Any] = {
-        "report_version": 3,
+        "report_version": 4,
         "scenario": {
             "payload_profiles": [p.value for p in profiles],
             "tier": tier,
@@ -313,9 +328,15 @@ def build_report(
         "results": rows,
     }
     if rubric_governance:
-        report["governance_rubric"] = load_rubric(rubric_governance)
+        gov = embed_rubric(rubric_governance)
+        report["governance_rubric"] = gov
+        rubric_index.append(str(gov["rubric_ref"]))
     if rubric_maintainability:
-        report["maintainability_rubric"] = load_rubric(rubric_maintainability)
+        maint = embed_rubric(rubric_maintainability)
+        report["maintainability_rubric"] = maint
+        rubric_index.append(str(maint["rubric_ref"]))
+    if rubric_index:
+        report["rubric_index"] = rubric_index
     return report
 
 

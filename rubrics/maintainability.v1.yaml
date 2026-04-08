@@ -1,28 +1,48 @@
+rubric_id: maintainability.v1
 version: 1
 title: Maintainability rubric
 scale: 1-5
+weight_max: 100
 criteria:
   - id: debugging
     label: Debugging and human-inspectability
     weight: 20
     score: null
+    evidence_prompt: |
+      - How quickly can on-call inspect a failing payload (tools, redaction, formats)?
+      - Is binary payload inspection acceptable for your org or a blocker?
   - id: tooling
     label: Tooling maturity (linters, IDE, ops)
     weight: 20
     score: null
+    evidence_prompt: |
+      - IDE / linter support for this format in the primary service language?
+      - Operational tooling (dump, replay, schema diff) in production-like envs?
   - id: failure_modes
     label: Operational failure modes and recovery
     weight: 20
     score: null
+    evidence_prompt: |
+      - Top failure modes (schema mismatch, skewed producers, bad evolution)?
+      - Runbooks or automated mitigations in place?
   - id: onboarding
     label: Onboarding and hiring familiarity
     weight: 15
     score: null
+    evidence_prompt: |
+      - Typical ramp time for a mid-level engineer to produce safe schema changes?
+      - Internal docs or training materials linked?
   - id: migration
     label: Migration path between formats
     weight: 15
     score: null
+    evidence_prompt: |
+      - Documented path from JSON to binary (or between binary formats)?
+      - Dual-write / dual-read period and cutover criteria?
   - id: supply_chain
     label: Supply chain and dependency footprint
     weight: 10
     score: null
+    evidence_prompt: |
+      - Key runtime deps for serialize/deserialize; patch cadence and license posture?
+      - Any blocked or high-risk dependencies?
