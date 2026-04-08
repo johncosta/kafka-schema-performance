@@ -19,7 +19,7 @@ lint: $(PY)
 
 test: $(PY)
 	$(PY) -m pytest -q
-	$(VENV)/bin/ksp-bench run --scenario small --tier S0 --formats json --warmup 2 --iterations 5 --output-dir /tmp/ksp-report
+	$(VENV)/bin/ksp-bench run --scenario small --tier S0 --formats all --warmup 2 --iterations 5 --output-dir /tmp/ksp-report
 	test -f /tmp/ksp-report/report.json
-	$(VENV)/bin/ksp-bench run --scenario small --tier S1 --compression zstd --formats json --warmup 1 --iterations 3 --output-dir /tmp/ksp-s1
+	$(VENV)/bin/ksp-bench run --scenario small --tier S1 --compression zstd --formats all --warmup 1 --iterations 3 --output-dir /tmp/ksp-s1
 	test -f /tmp/ksp-s1/report.json

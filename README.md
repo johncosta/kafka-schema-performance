@@ -24,7 +24,7 @@ ksp-bench run --scenario all --tier S0 --formats all --output-dir reports/
 
 - **Profiles:** `small`, `medium`, `large`, `evolution`, **`all`** (runs small+medium+large), or a **comma-separated** list (e.g. `small,medium`). Evolution uses Avro schema v1 → v2 when format is Avro.
 - **Tiers:** `S0` codec only; `S1` times **encode→compress** and **decompress→decode** with **`--compression gzip|zstd`** (levels: **`--s1-gzip-level`** / **`--s1-zstd-level`**, defaults 6 / 3). Phase-3 **`--gzip-level` / `--zstd-level`** remain separate **size probes** on raw wire.
-- **Formats:** `all` or comma-separated `avro,protobuf,json`.
+- **Formats:** `all` or comma-separated `avro,protobuf,json`. The CLI default is **`all`** (three codecs). If you pass e.g. **`--formats json`**, only that codec appears in `report.json` / `report.md`.
 - **Wire sizes (Phase 3):** `--gzip-level`, `--zstd-level` control size probes; optional `--confluent-envelope` / `--confluent-prefix-bytes` for Kafka-shaped value totals (independent of S1 timing compression).
 
 Rubrics under `rubrics/` are merged into `report.json` when those files exist (default discovery from the current working directory). Each embedded rubric includes a pinned **`rubric_ref`** (e.g. `governance.v1`); **`rubric_index`** lists refs in the report. **`report.md`** includes an **appendix** with weights, checklist **evidence prompts**, and space for human scores.
@@ -56,6 +56,8 @@ make install   # create .venv if needed, then editable install with dev extras
 make lint      # ruff, black --check, mypy (uses .venv)
 make test      # pytest + CLI smoke (same as CI)
 ```
+
+`make test` runs **`ksp-bench`** with **`--formats all`**, so smoke reports under `/tmp/ksp-report` and `/tmp/ksp-s1` include **avro**, **protobuf**, and **json** (not JSON-only).
 
 To use another Python for creating the venv, run `python3.12 -m venv .venv` yourself, then `make install` (the existing `.venv` is reused).
 
