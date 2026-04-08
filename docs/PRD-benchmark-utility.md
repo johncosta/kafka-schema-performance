@@ -2,13 +2,13 @@
 
 **Document status:** Draft  
 **Owner:** Platform / Data Engineering  
-**Last updated:** 2026-04-07  
+**Last updated:** 2026-04-07 *(stack metrics expanded)*  
 
 ---
 
 ## 1. Summary
 
-Define a **benchmark utility and evaluation framework** that compares **Apache Avro**, **Protocol Buffers (protobuf)**, and **JSON** (typically UTF-8 text with optional compression) under workloads relevant to event streaming, APIs, and log pipelines—especially in **Kafka**-adjacent contexts. The utility must produce **reproducible** numbers and **structured reports** for throughput, latency, wire/storage footprint, and qualitative dimensions such as **schema governance** and **maintainability**.
+Define a **benchmark utility and evaluation framework** that compares **Apache Avro**, **Protocol Buffers (protobuf)**, and **JSON** (typically UTF-8 text with optional compression) under workloads relevant to event streaming, APIs, and log pipelines—especially in **Kafka**-adjacent contexts. The utility must produce **reproducible** numbers and **structured reports** for **codec-level** performance (serialize/deserialize in isolation), **pipeline-level** performance (clients, compression, schema registry, and related stack), wire/storage footprint, and qualitative dimensions such as **schema governance** and **maintainability**.
 
 This PRD describes *what* the service delivers and *how success is measured*; implementation details (language, harness libraries, CI) belong in a separate technical specification after this PRD is accepted.
 
@@ -62,7 +62,7 @@ A **versioned software package** (CLI and/or library) plus **fixtures** that:
 
 1. **Loads** canonical test schemas and sample records (fixed + generated distributions).
 2. **Serializes and deserializes** each record with Avro, protobuf, and JSON encoders **using pinned dependencies**.
-3. **Executes** benchmark scenarios (batch size, threads, warm-up, iteration count, optional simulated I/O).
+3. **Executes** layered benchmark scenarios: **codec-only** (CPU/memory bound), **I/O-adjacent** (compression, registry HTTP), and **client integration** (producer/consumer batches where in scope)—each with documented batch size, threads, warm-up, iteration count, and seeds.
 4. **Emits** machine-readable results (e.g. JSON) and human-readable summaries (e.g. Markdown/HTML).
 5. **Optionally integrates** with schema registry–like flows (register schema, fetch ID, encode with schema ID) when those code paths are in scope for the deployment.
 
@@ -100,6 +100,25 @@ A **versioned software package** (CLI and/or library) plus **fixtures** that:
 - **Large blob-heavy** (~100 KB+): string/binary heavy; stress copy and allocation behavior.
 - **Schema evolution:** Reader/writer schema mismatch (add field, remove field, widen type if permitted) per format rules.
 
+#### 6.1.1 Fine-grained serialization and deserialization
+
+**Objective:** Isolate **what** is slow (encode vs decode vs validation vs allocation) so comparisons are actionable beyond a single “round-trip” number.
+
+| Metric | Definition | Notes |
+|--------|------------|--------|
+| **Encode-only latency / throughput** | Serialize in-memory object → bytes (no I/O) | Separate from decode; report median and tail. |
+| **Decode-only latency / throughput** | Bytes → in-memory object (no I/O) | Include parse + object materialization. |
+| **Validation-bound path** | Extra checks after decode (required fields, numeric ranges, custom validators) | JSON Schema / hand-rolled checks vs Avro reader schema enforcement vs protobuf presence semantics. |
+| **Schema resolution cost** | Time to bind reader/writer schema, build decoders, cache `GenericRecord` vs generated classes | One-time vs per-record; report both **first-use** and **steady-state**. |
+| **UTF-8 / transcoding** | JSON text encode/decode vs binary field copy | Dominates small-string-heavy payloads. |
+| **Allocation churn** | Bytes allocated per record, peak working set, optional **object pooling** effect | JVM: allocation rate + GC pause correlation; native: heap vs stack / arena if measured. |
+| **Zero-copy vs copy semantics** | Whether decode returns views into input buffer vs copying | Affects large-string/binary fields and safety. |
+| **Field access after decode** | Latency to read hot fields (flat record vs deeply nested) | Formats with lazy parsing (where applicable) vs eager materialization. |
+| **Re-serialize stability** | Same logical value → identical bytes (canonical encodings) | Relevant for signing, caches, deduplication; note JSON normalization. |
+| **Error-path cost** | Time to fail on corrupt/truncated payload | Security-relevant; optional micro-scenario. |
+
+**Reporting:** Where the runtime allows, emit a **breakdown** (e.g. encode % / decode % / validation % of total CPU samples or wall time per phase). If only wall time is available, document measurement method (cooperative markers vs statistical sampling).
+
 ### 6.2 Network and storage efficiency
 
 **Objective:** Quantify bytes on the wire and on disk for representative payloads and compression strategies.
@@ -118,7 +137,32 @@ A **versioned software package** (CLI and/or library) plus **fixtures** that:
 
 Reports should show **sensitivity**: e.g. ±20% payload size change impact on monthly GB.
 
-### 6.3 Schema governance across teams
+### 6.3 Software stack and pipeline performance
+
+**Objective:** Measure performance **outside** the pure codec that still scales with format choice: client libraries, batching, compression, schema discovery, and serialization-adjacent CPU in realistic pipelines. Results are **environment-specific**; the PRD requires labeling each scenario as **codec-only**, **codec + compression**, **codec + registry**, or **end-to-end client** so numbers are not conflated.
+
+| Layer | Metric | Definition | Notes |
+|-------|--------|------------|--------|
+| **Compression** | Compress/decompress throughput & added latency | Bytes in/out per second; CPU per MB for gzip/zstd/snappy levels used in prod | Often dominates “small JSON” paths; pair with Section 6.2 sizes. |
+| **Schema registry** | Register, lookup by ID, lookup latest, compatibility check | p50/p99 latency; throughput of **cached** vs **cold** schema fetch | HTTP/gRPC; connection reuse vs new connections per request. |
+| **Serialization envelope** | Per-record overhead to attach schema ID, magic byte, length prefix | Nanoseconds or % of total produce path | Confluent wire format vs custom framing. |
+| **Kafka producer** | Time to `send()` or equivalent for N records | Batch size, `linger.ms`, `batch.size`, acks; records/sec and client CPU | Optionally separate **serialize+partition** vs **full flush** depending on client API. |
+| **Kafka consumer** | Poll loop time per batch; bytes fetched → records deserialized | Fetch size, `max.partition.fetch.bytes`; deser CPU per batch | Include **cooperative rebalance** cost only if scenario targets consumer churn. |
+| **Threading / async** | Queue depth, executor saturation, event-loop delay | Relevant for async producers or gRPC streaming | Reports note single-thread vs multi-thread harness. |
+| **TLS / networking** | (Optional) Handshake amortized over N messages; encrypted size | Isolate only when benchmark includes real TCP; otherwise out of scope and stated. |
+| **Downstream serving** | (Optional) Same payload exposed over HTTP/gRPC: serialize-for-response | Compare JSON body vs protobuf `grpc` message framing | Extends “stack” to API edge without requiring Kafka. |
+
+**Scenario taxonomies (examples):**
+
+- **S0 — Codec in-process:** Sections 6.1–6.1.1 only; no network.
+- **S1 — Codec + compress:** Encode/decode with on-heap buffers plus compress/decompress of full message bytes.
+- **S2 — Codec + registry:** Include schema registration simulation or live registry; measure steady-state with warm schema cache vs explicit cache eviction.
+- **S3 — Producer micro-benchmark:** Client serializes and builds batches to memory or loopback broker fixture (if available); measure client-side CPU and batch build time.
+- **S4 — Consumer micro-benchmark:** Deserialize path from prefetched byte buffers (broker-independent) through to application object.
+
+**Deliverable:** Report includes a **layer cake** diagram or table: for each scenario, which layers are included and which are explicitly excluded (e.g. “no TLS”, “no real broker”).
+
+### 6.4 Schema governance across teams
 
 **Objective:** Score how each format supports **multi-team evolution** with policy and automation. This is **partly qualitative**; the utility should capture **checklist scores** and **time-to-complete** tasks where measurable.
 
@@ -133,7 +177,7 @@ Reports should show **sensitivity**: e.g. ±20% payload size change impact on mo
 
 **Deliverable:** A **governance scorecard** (weighted rubric) included in each report release, with versioned criteria so comparisons over time are meaningful.
 
-### 6.4 Long-term system maintainability
+### 6.5 Long-term system maintainability
 
 **Objective:** Capture factors that affect **total cost of ownership** beyond μs per record.
 
@@ -161,9 +205,10 @@ Reports should show **sensitivity**: e.g. ±20% payload size change impact on mo
 ## 8. Success criteria (MVP)
 
 1. Single-command (or CI job) reproduces a **full matrix** for at least three payload profiles and three formats.
-2. Published report includes **throughput, latency percentiles, size stats, compressed size stats**.
-3. Governance and maintainability sections use a **published rubric** with explicit weights.
-4. Documentation states **limitations** (single-node CPU, no cross-region latency, etc.).
+2. Published report includes **throughput, latency percentiles, size stats, compressed size stats**, and **codec-only vs layered scenarios** clearly labeled (Section 6.3).
+3. Where supported by the harness, reports include **fine-grained serialize/decode/validation** breakdown (Section 6.1.1) or a documented reason (e.g. runtime limits).
+4. Governance and maintainability sections use a **published rubric** with explicit weights.
+5. Documentation states **limitations** (single-node CPU, which stack layers are real vs simulated, no cross-region latency unless run says otherwise).
 
 ---
 
@@ -174,7 +219,8 @@ Reports should show **sensitivity**: e.g. ±20% payload size change impact on mo
 | Benchmark results are misread as universal truth | Lead with scenario labels; forbid “winner” language in auto-summary. |
 | Library choice dominates outcome | Pin versions; consider pluggable codecs; document defaults. |
 | JSON ambiguity (floats, field order, Unicode) | Define canonical JSON generation; use a reference serializer. |
-| Registry latency dominates | Separate “pure codec” vs “registry-inclusive” scenarios. |
+| Registry or network noise dominates | Separate **S0–S4** (or equivalent) scenario tiers; never compare codec-only to end-to-end without labeling. |
+| Stack benchmarks are environment-specific | Pin client, broker, and OS versions; report hardware class; avoid cross-repo numeric targets. |
 
 **Open questions**
 
@@ -201,8 +247,8 @@ Implementation architecture, repository layout, and test plan are specified in a
 
 ## Appendix B: Example metric snapshot (illustrative only)
 
-| Scenario | Format | Serialize MB/s | p99 round-trip µs | Mean bytes (uncompressed) | Mean bytes (zstd) |
-|----------|--------|----------------|-------------------|---------------------------|-------------------|
-| Small event | … | … | … | … | … |
+| Scenario | Format | Encode MB/s | Decode MB/s | p99 round-trip µs | p99 encode µs | p99 decode µs | Mean bytes (raw) | Mean bytes (zstd) | Scenario tier (S0–S4) |
+|----------|--------|-------------|-------------|-------------------|---------------|---------------|------------------|-------------------|-------------------------|
+| Small event | … | … | … | … | … | … | … | … | … |
 
-*(Placeholder—real values come from the harness.)*
+*(Placeholder—real values come from the harness. Split encode/decode columns appear when Section 6.1.1 instrumentation is available.)*
