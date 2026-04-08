@@ -9,6 +9,8 @@ on:
 jobs:
   lint-test:
     runs-on: ubuntu-latest
+    env:
+      PYTHON: python
     strategy:
       matrix:
         python-version: ["3.11", "3.12"]
@@ -21,23 +23,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: make install
 
-      - name: Ruff
-        run: ruff check src tests
+      - name: Lint
+        run: make lint
 
-      - name: Black (check)
-        run: black --check src tests
-
-      - name: Mypy
-        run: mypy src
-
-      - name: Pytest
-        run: pytest -q
-
-      - name: CLI smoke
-        run: |
-          ksp-bench run --scenario small --tier S0 --formats json --warmup 2 --iterations 5 --output-dir /tmp/ksp-report
-          test -f /tmp/ksp-report/report.json
+      - name: Test
+        run: make test
