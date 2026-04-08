@@ -4,6 +4,8 @@ import math
 from itertools import groupby
 from typing import Any
 
+from benchmark.report.rubrics_md import append_rubric_appendix
+
 
 def _fmt_sci(x: float) -> str:
     if math.isnan(x):
@@ -226,9 +228,5 @@ def render_markdown(report: dict[str, Any]) -> str:
             lines.append(f"- Included: {', '.join(lc['included'])}")
             lines.append(f"- Excluded: {', '.join(lc['excluded'])}")
             lines.append("")
-    if "governance_rubric" in report:
-        lines.append("## Governance rubric (metadata)")
-        lines.append("")
-        lines.append("See `report.json` for the versioned YAML payload.")
-        lines.append("")
+    append_rubric_appendix(lines, report)
     return "\n".join(lines)

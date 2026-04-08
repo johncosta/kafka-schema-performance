@@ -153,6 +153,8 @@ Versioned JSON schema or Pydantic models for:
 
 **Exit:** MVP criterion (4) — published weights; each report references `governance.v1` / `maintainability.v1` (or current version).
 
+**Delivered:** YAML rubrics include **`evidence_prompt`** checklists per criterion; `embed_rubric()` pins **`rubric_ref`** (from `rubric_id` or filename stem) and **`source_file`**; reports set **`rubric_index`** and **`report_version` 4**; Markdown **appendix** renders criteria table (id, weight, score, label), weight sum, and evidence prompts. Scores remain human-filled (`null` in fixtures).
+
 ### Phase 5 — S1 compression stack
 
 - After encode, compress full payload; for decode path, decompress then decode (or symmetric definition documented).
