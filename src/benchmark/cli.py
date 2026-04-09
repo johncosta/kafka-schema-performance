@@ -84,8 +84,8 @@ def run_cmd(
         "--tier",
         "-t",
         help=(
-            "S0 codec only; S1 codec + compression; "
-            "S2 codec + mock schema registry (loopback)"
+            "S0 codec; S1 codec+compression; S2 mock schema registry; "
+            "S3/S4 in-memory producer/consumer batch (no broker)"
         ),
     ),
     formats: str = typer.Option(
@@ -184,22 +184,28 @@ def run_cmd(
         min=1,
         help="Tier S2 only: schema id for mock GET /schemas/ids/{id}",
     ),
+    batch_size: int = typer.Option(
+        64,
+        "--batch-size",
+        min=1,
+        help="Tier S3/S4 only: records per timed batch iteration",
+    ),
 ) -> None:
     """Run benchmark matrix and write report.json (+ report.md)."""
 
     profiles = _parse_scenarios(scenario)
-    if tier not in ("S0", "S1", "S2"):
-        raise typer.BadParameter("tier must be S0, S1, or S2")
+    if tier not in ("S0", "S1", "S2", "S3", "S4"):
+        raise typer.BadParameter("tier must be S0, S1, S2, S3, or S4")
     tier_t: ScenarioTier = tier  # type: ignore[assignment]
     fmt_list = _parse_formats(formats)
-    if tier in ("S0", "S2") and compression != "zstd":
-        # allow but note compression unused for timed S0/S2 codec path
+    if tier in ("S0", "S2", "S3", "S4") and compression != "zstd":
+        # allow but note compression unused for timed S0/S2/S3/S4 codec path
         pass
     comp: str = compression
     if comp not in ("gzip", "zstd"):
         raise typer.BadParameter(
             "compression must be gzip or zstd "
-            "(S1 timed path; S0/S2 ignore for codec timing)",
+            "(S1 timed path; S0/S2/S3/S4 ignore for codec timing)",
         )
 
     gov = governance_rubric
@@ -233,6 +239,7 @@ def run_cmd(
         baseline_report_path=str(baseline_report) if baseline_report else None,
         regression_warn_ratio=regression_warn_ratio,
         registry_schema_id=registry_schema_id,
+        batch_size=batch_size,
     )
     rc = report.get("regression_check")
     if isinstance(rc, dict) and not rc.get("skipped") and rc.get("warnings"):

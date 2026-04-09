@@ -41,7 +41,7 @@ from benchmark.report.limitations import limitations_for_report
 from benchmark.report.regression import regression_check_against_baseline_file
 from benchmark.report.render import render_markdown
 
-ScenarioTier = Literal["S0", "S1", "S2"]
+ScenarioTier = Literal["S0", "S1", "S2", "S3", "S4"]
 
 MEASUREMENT_MODEL: dict[str, Any] = {
     "timer": "time.perf_counter (wall time per iteration)",
@@ -81,6 +81,11 @@ MEASUREMENT_MODEL: dict[str, Any] = {
         "encode in timed encode and round-trip paths (HTTP keep-alive). "
         "Cold vs warm fetch micro-benchmarks are environment-specific; do not "
         "compare to S0/S1 without separating registry overhead."
+    ),
+    "tier_s3_s4_memory": (
+        "S3/S4 model producer/consumer batch work in process memory only: "
+        "no Kafka client library and no broker. Encode/decode/round-trip rows "
+        "remain single-record S0 reference timings; batch metrics are separate."
     ),
 }
 
@@ -352,6 +357,7 @@ def bench_codec(
     registry_host: str = "",
     registry_port: int = 0,
     registry_schema_id: int = 1,
+    batch_size: int = 64,
 ) -> dict[str, Any]:
     if tier == "S2":
         if not registry_host or registry_port <= 0:
@@ -370,6 +376,34 @@ def bench_codec(
             registry_host=registry_host,
             registry_port=registry_port,
             registry_schema_id=registry_schema_id,
+        )
+    if tier == "S3":
+        return _bench_codec_s3(
+            codec,
+            event,
+            compression=compression,
+            warmup=warmup,
+            iterations=iterations,
+            batch_size=batch_size,
+            tracemalloc_sample=tracemalloc_sample,
+            gzip_level=gzip_level,
+            zstd_level=zstd_level,
+            include_confluent_envelope=include_confluent_envelope,
+            confluent_prefix_bytes=confluent_prefix_bytes,
+        )
+    if tier == "S4":
+        return _bench_codec_s4(
+            codec,
+            event,
+            compression=compression,
+            warmup=warmup,
+            iterations=iterations,
+            batch_size=batch_size,
+            tracemalloc_sample=tracemalloc_sample,
+            gzip_level=gzip_level,
+            zstd_level=zstd_level,
+            include_confluent_envelope=include_confluent_envelope,
+            confluent_prefix_bytes=confluent_prefix_bytes,
         )
     encoded_last: bytes | None = None
     for _ in range(warmup):
@@ -558,6 +592,144 @@ def bench_codec(
     return out
 
 
+def _bench_codec_s3(
+    codec: Codec,
+    event: AnalyticsEvent,
+    *,
+    compression: CompressionAlg,
+    warmup: int,
+    iterations: int,
+    batch_size: int,
+    tracemalloc_sample: bool,
+    gzip_level: int,
+    zstd_level: int,
+    include_confluent_envelope: bool,
+    confluent_prefix_bytes: int,
+) -> dict[str, Any]:
+    """S3: S0 reference rows + in-memory producer batch (encode × N + join)."""
+
+    base = bench_codec(
+        codec,
+        event,
+        tier="S0",
+        compression=compression,
+        warmup=warmup,
+        iterations=iterations,
+        tracemalloc_sample=tracemalloc_sample,
+        gzip_level=gzip_level,
+        zstd_level=zstd_level,
+        include_confluent_envelope=include_confluent_envelope,
+        confluent_prefix_bytes=confluent_prefix_bytes,
+    )
+    for _ in range(warmup):
+        parts = [codec.encode(event) for _ in range(batch_size)]
+        _ = b"".join(parts)
+
+    batch_times: list[float] = []
+    batch_total_bytes: list[int] = []
+    for _ in range(iterations):
+        t0 = time.perf_counter()
+        parts = [codec.encode(event) for _ in range(batch_size)]
+        _ = b"".join(parts)
+        batch_times.append(time.perf_counter() - t0)
+        batch_total_bytes.append(sum(len(p) for p in parts))
+
+    bstats = summarize_times(batch_times)
+    mean_b_bytes = (
+        float(sum(batch_total_bytes)) / len(batch_total_bytes)
+        if batch_total_bytes
+        else 0.0
+    )
+    mean_s = float(bstats["mean_s"])
+    base["tier"] = "S3"
+    base["layer_cake"] = _layer_cake("S3", compression)
+    base["compression"] = "none"
+    base["s3_producer_batch"] = {
+        "batch_size": batch_size,
+        "timed_operation": (
+            "encode batch_size domain records, then bytes.join (flush proxy)"
+        ),
+        "batch_build_and_join": bstats,
+        "batch_total_bytes_mean": mean_b_bytes,
+        "batch_mb_per_s": mb_per_second(mean_s, int(round(mean_b_bytes))),
+        "effective_records_per_s": (
+            (batch_size / mean_s) if mean_s > 0 else float("nan")
+        ),
+        "note": (
+            "No Kafka producer or broker; memory only. Encode/decode/round_trip "
+            "rows are single-record S0 timings for codec reference."
+        ),
+    }
+    return base
+
+
+def _bench_codec_s4(
+    codec: Codec,
+    event: AnalyticsEvent,
+    *,
+    compression: CompressionAlg,
+    warmup: int,
+    iterations: int,
+    batch_size: int,
+    tracemalloc_sample: bool,
+    gzip_level: int,
+    zstd_level: int,
+    include_confluent_envelope: bool,
+    confluent_prefix_bytes: int,
+) -> dict[str, Any]:
+    """S4: S0 reference rows + prefetched payloads, timed batch decode."""
+
+    base = bench_codec(
+        codec,
+        event,
+        tier="S0",
+        compression=compression,
+        warmup=warmup,
+        iterations=iterations,
+        tracemalloc_sample=tracemalloc_sample,
+        gzip_level=gzip_level,
+        zstd_level=zstd_level,
+        include_confluent_envelope=include_confluent_envelope,
+        confluent_prefix_bytes=confluent_prefix_bytes,
+    )
+    prefetched = [codec.encode(event) for _ in range(batch_size)]
+    total_bytes_per_pass = sum(len(b) for b in prefetched)
+
+    for _ in range(warmup):
+        for blob in prefetched:
+            _ = codec.decode(blob)
+
+    batch_times: list[float] = []
+    for _ in range(iterations):
+        t0 = time.perf_counter()
+        for blob in prefetched:
+            _ = codec.decode(blob)
+        batch_times.append(time.perf_counter() - t0)
+
+    dstats = summarize_times(batch_times)
+    mean_s = float(dstats["mean_s"])
+    base["tier"] = "S4"
+    base["layer_cake"] = _layer_cake("S4", compression)
+    base["compression"] = "none"
+    base["s4_consumer_batch"] = {
+        "batch_size": batch_size,
+        "prefetch_note": (
+            "Identical encoded payloads in memory; broker fetch not modeled."
+        ),
+        "batch_decode": dstats,
+        "batch_total_bytes_per_iteration": total_bytes_per_pass,
+        "batch_mb_per_s": mb_per_second(mean_s, total_bytes_per_pass),
+        "effective_records_per_s": (
+            (batch_size / mean_s) if mean_s > 0 else float("nan")
+        ),
+        "note": (
+            "No Kafka consumer or broker; memory only. Encode/decode/round_trip "
+            "rows are single-record S0 timings for codec reference."
+        ),
+    }
+    return base
+
+
 def _layer_cake(tier: ScenarioTier, compression: CompressionAlg) -> dict[str, Any]:
     if tier == "S0":
         return {
@@ -584,6 +756,31 @@ def _layer_cake(tier: ScenarioTier, compression: CompressionAlg) -> dict[str, An
                 "real Confluent/Apicurio/Glue latency",
                 "Kafka client",
                 "compression in timed codec path",
+            ],
+        }
+    if tier == "S3":
+        return {
+            "included": [
+                "single-record encode/decode/round-trip (S0 reference, same rows)",
+                "producer batch: batch_size encodes + bytes.join per timed iteration",
+            ],
+            "excluded": [
+                "Kafka producer client",
+                "broker",
+                "network",
+                "real batching API semantics",
+            ],
+        }
+    if tier == "S4":
+        return {
+            "included": [
+                "single-record encode/decode/round-trip (S0 reference, same rows)",
+                "consumer batch: decode batch_size prefetched payloads per iteration",
+            ],
+            "excluded": [
+                "Kafka consumer client",
+                "broker fetch",
+                "network",
             ],
         }
     return {
@@ -638,6 +835,7 @@ def build_report(
     baseline_report_path: str | None = None,
     regression_warn_ratio: float = 0.2,
     registry_schema_id: int = 1,
+    batch_size: int = 64,
 ) -> dict[str, Any]:
     mock_registry: MockRegistryServer | None = None
     if tier == "S2":
@@ -666,6 +864,7 @@ def build_report(
                     registry_host=mock_registry.host if mock_registry else "",
                     registry_port=mock_registry.port if mock_registry else 0,
                     registry_schema_id=registry_schema_id,
+                    batch_size=batch_size,
                 )
                 row["payload_profile"] = profile.value
                 rows.append(row)
@@ -683,6 +882,7 @@ def build_report(
         "timed_iterations": iterations,
         "seed": seed,
         "compression": compression,
+        "batch_size": batch_size if tier in ("S3", "S4") else None,
         "size_and_cost": {
             "gzip_compresslevel": gzip_level,
             "zstd_level": zstd_level,
@@ -715,9 +915,18 @@ def build_report(
                 "environment-specific, not real SR latency."
             ),
         }
+    if tier in ("S3", "S4"):
+        scenario_block["s3_s4"] = {
+            "batch_size": batch_size,
+            "implementation": "memory_queue_only",
+            "note": (
+                "No kafka-python/confluent-kafka; no broker. "
+                "S3 = producer-style batch build; S4 = prefetched decode loop."
+            ),
+        }
 
     report: dict[str, Any] = {
-        "report_version": 7,
+        "report_version": 8,
         "scenario": scenario_block,
         "measurement": MEASUREMENT_MODEL,
         "environment": collect_environment(),

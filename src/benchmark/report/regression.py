@@ -12,6 +12,7 @@ def _scenario_fingerprint(scenario: dict[str, Any]) -> tuple[Any, ...]:
         tuple(scenario.get("formats", [])),
         scenario.get("compression"),
         scenario.get("timed_iterations"),
+        scenario.get("batch_size"),
     )
 
 
@@ -37,8 +38,8 @@ def regression_check_against_baseline_file(
     """
     Optional Phase-8 regression hints: warn if round_trip.mean_s worsens vs baseline.
 
-    Baseline must match tier, seed, payload_profiles, formats, compression, and
-    timed_iterations so comparisons are apples-to-apples.
+    Baseline must match tier, seed, payload_profiles, formats, compression,
+    timed_iterations, and batch_size (S3/S4) so comparisons are apples-to-apples.
     """
 
     try:
@@ -71,7 +72,7 @@ def regression_check_against_baseline_file(
             "skipped": True,
             "reason": (
                 "scenario fingerprint mismatch (tier, seed, profiles, formats, "
-                "compression, or timed_iterations differ)"
+                "compression, timed_iterations, or batch_size differ)"
             ),
             "baseline_path": baseline_path,
             "current_fingerprint": _scenario_fingerprint(cur_scen),
