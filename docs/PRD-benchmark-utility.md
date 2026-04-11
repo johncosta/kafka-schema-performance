@@ -2,7 +2,7 @@
 
 **Document status:** Draft (gap-hardened)  
 **Owner:** Platform / Data Engineering  
-**Last updated:** 2026-04-11 *(test/evidence bar aligned with gap analysis)*  
+**Last updated:** 2026-04-11 *(Kafka E2E reporting §6.3.1 / §7.3–7.5)*  
 
 ---
 
@@ -178,6 +178,26 @@ Reports should show **sensitivity**: e.g. ±20% payload size change impact on mo
 
 **Deliverable:** Report includes a **layer cake** diagram or table: for each scenario, which layers are included and which are explicitly excluded (e.g. “no TLS”, “no real broker”).
 
+#### 6.3.1 Kafka producer–consumer protocol benchmarks (`kafka_e2e`, normative)
+
+**Objective:** When a **real Kafka-compatible broker** is available, capture **client-side, format-fair** measurements that sit **adjacent to** tier S0–S4: same logical payloads and codecs, but **Kafka-protocol** produce and consume paths. Results MUST remain **labeled** as broker-backed (not codec-only) and MUST record **client library**, **broker contact point**, and **effective producer/consumer configuration** so comparisons remain reproducible.
+
+**Minimum metrics (current major version of `kafka_e2e`):**
+
+| Metric | Definition | Reporting |
+|--------|------------|-----------|
+| **Serialize (pre-broker)** | Mean wall time for in-process `encode` / `SerializeToString` over N iterations | Per-case `serialize.mean_s`; surfaced in **Markdown**, **summary.html**, **distributed.html** |
+| **Produce (timed)** | Wall time for M synchronous or flushed sends of the **same pre-serialized value bytes** after warmup | `produce.wall_s`, `produce.mean_per_message_s`, **`produce.throughput_messages_per_s`**, **`produce.throughput_megabytes_per_s`** |
+| **Consume loop** | Wall time from partition assignment / seek through last polled record (warmup + timed) | `consume.wall_s`, `consume.mean_per_message_s`, **`consume.throughput_messages_per_s`**, **`consume.throughput_megabytes_per_s`** |
+| **Value bytes** | Length of serialized value used on the wire | `value_bytes` |
+| **Client & config snapshot** | Library name, API version, and JSON-serializable producer/consumer kwargs | Top-level **`client`**, **`producer_config`**, **`consumer_config`** in `report.json` |
+
+**Throughput definitions:** `throughput_megabytes_per_s` SHALL use `(value_bytes × messages_in_interval) / wall_seconds / (1024²)` for the same interval as the reported wall time (timed produce window uses timed message count only; consume window uses all messages read unless explicitly split in a future version).
+
+**Normative reporting (Section 7):** Any release that emits `kafka_e2e` SHALL render the block in **Markdown** (`report.md`), **summary.html**, and **distributed.html** with: bootstrap + broker label, client line, collapsible or appendix **producer/consumer config**, per-case table including **serialize**, **produce mean/msg**, **produce MB/s**, **consume mean/msg**, **consume MB/s**, and fine-print stating that **decode is not isolated** from the consume poll loop unless a future version adds a `decode` phase.
+
+**Roadmap (shall be documented in `kafka_e2e.roadmap` until implemented):** optional **decode-only** timing per message after fetch; **producer compression** (`compression_type`, levels); **linger / batch** tuning (`linger_ms`, `batch.size`); **acks** variants (`acks=1` vs `all`); **keys and headers** on records; **multi-partition** topics and assignment/rebalance cost; **async** produce + flush throughput. Each addition MUST update `kafka_e2e_version` or nested **scenario** metadata and the layer-cake / limitations narrative.
+
 ### 6.4 Schema governance across teams
 
 **Objective:** Score how each format supports **multi-team evolution** with policy and automation. This is **partly qualitative**; the utility should capture **checklist scores** and **time-to-complete** tasks where measurable.
@@ -260,6 +280,21 @@ Provide a **narrow in-process** suite with deterministic inputs, **canned timing
 - **Narrative appendix:** Governance and maintainability scorecards with references to internal standards.
 - **Artifact integrity:** Hash of fixture inputs; list of dependency versions (SBOM optional follow-up).
 - **Honest scope:** Each release notes which Section **6.6** priorities are implemented vs backlog; HTML viz and summary win-rates MUST align with that scope (Section 3.3).
+
+### 7.3 Kafka `kafka_e2e` in machine-readable reports
+
+- **`report.json`:** Top-level **`kafka_e2e`** object with versioned schema, **`client`**, **`producer_config`**, **`consumer_config`**, **`phases`** (human-readable definitions), optional **`roadmap`** string for PRD §6.3.1 backlog, and **`cases[]`** (one object per codec × payload profile run).
+- **Each case** includes `serialize`, `produce`, and `consume` blocks with means, wall times where applicable, and **throughput** fields defined in Section 6.3.1.
+- **Missing block:** When no broker run is attached, omit `kafka_e2e`; viz and Markdown MUST omit Kafka sections without fabricating placeholders.
+
+### 7.4 Kafka `kafka_e2e` in Markdown (`report.md`)
+
+- A dedicated **## Kafka-protocol end-to-end (kafka_e2e)** section SHALL appear after tier results (before rubrics) when the block is present, listing version, bootstrap, broker label, client library, **config snapshots**, phase definitions, and a **per-codec** bullet list including serialize mean and produce/consume throughput.
+
+### 7.5 Kafka `kafka_e2e` in HTML summary and distributed pages
+
+- **`summary.html`:** Kafka section SHALL include client line, **details** (or equivalent) with JSON **producer** and **consumer** config snapshots, optional roadmap fine-print, phase list, and a **widened matrix** (value bytes, serialize, produce mean/msg, **produce MB/s**, consume mean/msg, **consume MB/s**) plus fine-print on throughput methodology (Section 6.3.1).
+- **`distributed.html`:** SHALL reuse the same Kafka section renderer so footprint and broker-backed views stay consistent; CSS SHALL style embedded config `<pre>` blocks for readability.
 
 ---
 

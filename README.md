@@ -14,7 +14,7 @@ source .venv/bin/activate
 pip install -e ".[dev,kafka]"
 ```
 
-Optional **Kafka-protocol** end-to-end timings (publish + read back serialized payloads) use the **`[kafka]`** extra (`kafka-python-ng`, Testcontainers). They attach a **`kafka_e2e`** block to `report.json` and appear in **`summary.html`** when present. Local broker:
+Optional **Kafka-protocol** end-to-end timings (publish + read back serialized payloads) use the **`[kafka]`** extra (`kafka-python-ng`, Testcontainers). They attach a **`kafka_e2e`** block (version **2**: client/config snapshot, produce/consume **MB/s** throughput) to `report.json` and render in **`report.md`**, **`summary.html`**, and **`distributed.html`** when present. Local broker:
 
 ```bash
 pip install -e ".[dev,kafka]"

@@ -73,6 +73,16 @@ h3 { font-size: 0.95rem; margin-top: 0.75rem; color: #333; }
 }
 .page-nav a { color: #1e5a8a; }
 .page-nav a:focus-visible { outline: 2px solid #2d6a9f; outline-offset: 2px; }
+.cfg-pre {
+  font-size: 0.78rem;
+  max-height: 14rem;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #ddd;
+  padding: 0.5rem;
+  margin: 0.35rem 0;
+}
+.meta { font-size: 0.85rem; color: #444; }
 </style>
 """.strip()
 
