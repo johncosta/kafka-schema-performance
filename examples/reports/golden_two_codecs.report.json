@@ -1,0 +1,30 @@
+{
+  "report_version": 9,
+  "scenario": {
+    "tier": "S0",
+    "payload_profiles": ["small"],
+    "formats": ["json", "avro"],
+    "compression": "zstd",
+    "timed_iterations": 10
+  },
+  "results": [
+    {
+      "payload_profile": "small",
+      "codec": "json",
+      "tier": "S0",
+      "raw_size_bytes": 200,
+      "encode": { "mean_s": 5e-6 },
+      "decode": { "mean_s": 5e-6 },
+      "round_trip": { "mean_s": 5e-6 }
+    },
+    {
+      "payload_profile": "small",
+      "codec": "avro",
+      "tier": "S0",
+      "raw_size_bytes": 90,
+      "encode": { "mean_s": 1e-6 },
+      "decode": { "mean_s": 1e-6 },
+      "round_trip": { "mean_s": 1e-6 }
+    }
+  ]
+}
