@@ -14,6 +14,7 @@ from benchmark.viz.stack_html import (
     build_stack_html,
     write_stack_visualization,
 )
+from benchmark.viz.summary_html import write_summary_visualization
 
 
 def _minimal_row(
@@ -365,6 +366,24 @@ def test_build_stack_html_from_build_report_full_matrix_avro_protobuf_json() -> 
     assert "avro, protobuf, json" in html
 
 
+def test_build_stack_html_includes_companion_summary_link() -> None:
+    report = {
+        "report_version": 8,
+        "scenario": {
+            "tier": "S0",
+            "payload_profiles": ["small"],
+            "formats": ["json"],
+            "compression": "zstd",
+            "timed_iterations": 10,
+        },
+        "results": [_minimal_row(tier="S0", profile="small", codec="json")],
+    }
+    html = build_stack_html(report, companion_summary_href="summary.html")
+    assert 'class="page-nav"' in html
+    assert 'href="summary.html"' in html
+    assert "Performance summary" in html
+
+
 def test_write_stack_visualization_roundtrip(tmp_path: Path) -> None:
     src = tmp_path / "report.json"
     src.write_text(
@@ -382,3 +401,24 @@ def test_write_stack_visualization_roundtrip(tmp_path: Path) -> None:
     assert "Round-trip" in text
     assert 'role="tablist"' in text
     assert "What do benchmark tiers mean?" in text
+
+
+def test_write_stack_visualization_cross_link_paths(tmp_path: Path) -> None:
+    src = tmp_path / "report.json"
+    src.write_text(
+        '{"report_version":1,"scenario":{"tier":"S0","payload_profiles":["x"],'
+        '"timed_iterations":1},"results":['
+        '{"payload_profile":"x","codec":"json","tier":"S0","raw_size_bytes":1,'
+        '"encode":{"mean_s":1e-9},"decode":{"mean_s":1e-9},"round_trip":{"mean_s":2e-9}}'
+        "]}",
+        encoding="utf-8",
+    )
+    stack = tmp_path / "nested" / "stack.html"
+    summary = tmp_path / "summary.html"
+    write_stack_visualization(src, stack, companion_summary_path=summary)
+    write_summary_visualization(src, summary, companion_stack_path=stack)
+    stack_txt = stack.read_text(encoding="utf-8")
+    summary_txt = summary.read_text(encoding="utf-8")
+    assert "../summary.html" in stack_txt
+    assert 'href="nested/stack.html"' in summary_txt
+    assert "stack &amp; data view" in summary_txt

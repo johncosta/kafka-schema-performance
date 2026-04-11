@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 from pathlib import Path
 from typing import Any, cast
 
@@ -477,6 +478,20 @@ def _tier_top_tabs_html(
     )
 
 
+def relative_viz_href(*, from_html: Path, to_html: Path) -> str:
+    """Relative URL path from one generated HTML file to another (same or other dir)."""
+
+    return Path(os.path.relpath(to_html, start=from_html.parent)).as_posix()
+
+
+def companion_page_nav_html(*, href: str | None, link_text: str) -> str:
+    if not href:
+        return ""
+    eh = html.escape(href, quote=True)
+    lt = html.escape(link_text)
+    return f'<p class="page-nav"><a href="{eh}">{lt}</a></p>'
+
+
 _TAB_SWITCH_JS = """
 <script>
 (function () {
@@ -544,7 +559,11 @@ _TAB_SWITCH_JS = """
 """
 
 
-def build_stack_html(report: dict[str, Any]) -> str:
+def build_stack_html(
+    report: dict[str, Any],
+    *,
+    companion_summary_href: str | None = None,
+) -> str:
     scen = report.get("scenario")
     if not isinstance(scen, dict):
         scen = {}
@@ -596,6 +615,11 @@ def build_stack_html(report: dict[str, Any]) -> str:
         f"<code>report_version</code> {ver_e}</p>"
     )
 
+    nav = companion_page_nav_html(
+        href=companion_summary_href,
+        link_text="Performance summary →",
+    )
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -605,6 +629,7 @@ def build_stack_html(report: dict[str, Any]) -> str:
 {_STACK_PAGE_CSS}
 </head>
 <body>
+{nav}
 <h1>Serialization stack &amp; component times</h1>
 {summary}
 {body}
@@ -747,16 +772,30 @@ h1 { font-size: 1.35rem; }
   line-height: 1.45;
 }
 .scenario-tabs { margin-top: 0.25rem; }
+.page-nav {
+  margin: 0 0 0.75rem;
+  font-size: 0.92rem;
+}
+.page-nav a { color: #1e5a8a; }
+.page-nav a:focus-visible { outline: 2px solid #2d6a9f; outline-offset: 2px; }
 </style>
 """.strip()
 
 
-def write_stack_visualization(report_path: str | Path, output_path: str | Path) -> None:
+def write_stack_visualization(
+    report_path: str | Path,
+    output_path: str | Path,
+    *,
+    companion_summary_path: Path | None = None,
+) -> None:
     rp = Path(report_path)
     with rp.open(encoding="utf-8") as f:
         report = cast(dict[str, Any], json.load(f))
-    html_out = build_stack_html(report)
     op = Path(output_path)
+    sum_href: str | None = None
+    if companion_summary_path is not None:
+        sum_href = relative_viz_href(from_html=op, to_html=Path(companion_summary_path))
+    html_out = build_stack_html(report, companion_summary_href=sum_href)
     op.parent.mkdir(parents=True, exist_ok=True)
     with op.open("w", encoding="utf-8") as f:
         f.write(html_out)

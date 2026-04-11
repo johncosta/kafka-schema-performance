@@ -286,9 +286,20 @@ def viz_cmd(
     from benchmark.viz.stack_html import write_stack_visualization
     from benchmark.viz.summary_html import write_summary_visualization
 
-    write_stack_visualization(report_json, output)
-    typer.echo(f"Wrote {output}")
+    sum_path: Path | None = None
     if summary:
         sum_path = summary_output or (output.parent / "summary.html")
-        write_summary_visualization(report_json, sum_path)
+
+    write_stack_visualization(
+        report_json,
+        output,
+        companion_summary_path=sum_path,
+    )
+    typer.echo(f"Wrote {output}")
+    if summary and sum_path is not None:
+        write_summary_visualization(
+            report_json,
+            sum_path,
+            companion_stack_path=output,
+        )
         typer.echo(f"Wrote {sum_path}")

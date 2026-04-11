@@ -7,7 +7,13 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
-from benchmark.viz.stack_html import TIER_ORDER, _fmt_time, _mean_s
+from benchmark.viz.stack_html import (
+    TIER_ORDER,
+    _fmt_time,
+    _mean_s,
+    companion_page_nav_html,
+    relative_viz_href,
+)
 
 # Ratio above which we call a timing gap "large" in prose (micro-benchmark noise).
 _SPREAD_NOTE_RATIO = 1.15
@@ -570,11 +576,21 @@ h2 { font-size: 1.05rem; margin-top: 1.25rem; }
   background: #fffbeb;
 }
 .callout.warn h2 { margin-top: 0; font-size: 1rem; }
+.page-nav {
+  margin: 0 0 0.75rem;
+  font-size: 0.92rem;
+}
+.page-nav a { color: #1e5a8a; }
+.page-nav a:focus-visible { outline: 2px solid #2d6a9f; outline-offset: 2px; }
 </style>
 """.strip()
 
 
-def build_summary_html(report: dict[str, Any]) -> str:
+def build_summary_html(
+    report: dict[str, Any],
+    *,
+    companion_stack_href: str | None = None,
+) -> str:
     scen = report.get("scenario")
     if not isinstance(scen, dict):
         scen = {}
@@ -616,13 +632,24 @@ def build_summary_html(report: dict[str, Any]) -> str:
         body = "<p>No results in report.</p>"
     else:
         bullets = _collect_headline_bullets(groups)
+        if companion_stack_href:
+            eh = html.escape(companion_stack_href, quote=True)
+            stack_blurb = (
+                "<p>Each table compares codecs for the same benchmark tier and "
+                f'payload profile. Open the <a href="{eh}">stack &amp; data view</a> '
+                f"for per-codec diagrams and bar charts.</p>"
+            )
+        else:
+            stack_blurb = (
+                "<p>Each table compares codecs for the same benchmark tier and payload "
+                "profile. Open the stack visualization for per-codec diagrams and bar "
+                "charts.</p>"
+            )
         body = (
             _win_rate_section(groups, rows)
             + '<section class="intro"><h2>Headlines</h2><ul>'
             f'{"".join(bullets)}</ul>'
-            "<p>Each table compares codecs for the same benchmark tier and payload "
-            "profile. Open the stack visualization for per-codec diagrams and bar "
-            "charts.</p>"
+            f"{stack_blurb}"
             "</section>"
             + _regression_block(report)
             + "".join(sections)
@@ -638,6 +665,11 @@ def build_summary_html(report: dict[str, Any]) -> str:
         f"<code>report_version</code> {html.escape(str(ver))}</p>"
     )
 
+    nav = companion_page_nav_html(
+        href=companion_stack_href,
+        link_text="← Stack & component times (data)",
+    )
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -647,6 +679,7 @@ def build_summary_html(report: dict[str, Any]) -> str:
 {_SUMMARY_PAGE_CSS}
 </head>
 <body>
+{nav}
 <h1>Performance summary</h1>
 {summary}
 {body}
@@ -658,12 +691,17 @@ def build_summary_html(report: dict[str, Any]) -> str:
 def write_summary_visualization(
     report_path: str | Path,
     output_path: str | Path,
+    *,
+    companion_stack_path: Path | None = None,
 ) -> None:
     rp = Path(report_path)
     with rp.open(encoding="utf-8") as f:
         report = cast(dict[str, Any], json.load(f))
-    html_out = build_summary_html(report)
     op = Path(output_path)
+    stack_href: str | None = None
+    if companion_stack_path is not None:
+        stack_href = relative_viz_href(from_html=op, to_html=Path(companion_stack_path))
+    html_out = build_summary_html(report, companion_stack_href=stack_href)
     op.parent.mkdir(parents=True, exist_ok=True)
     with op.open("w", encoding="utf-8") as f:
         f.write(html_out)

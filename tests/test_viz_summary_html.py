@@ -27,6 +27,28 @@ def _row(
     }
 
 
+def test_build_summary_html_stack_data_link_when_href_set() -> None:
+    report = {
+        "report_version": 8,
+        "scenario": {
+            "tier": "S0",
+            "payload_profiles": ["small"],
+            "formats": ["json", "avro"],
+            "compression": "zstd",
+            "timed_iterations": 10,
+        },
+        "results": [
+            _row(tier="S0", profile="small", codec="json", enc=2e-6, dec=2e-6, rt=2e-6),
+            _row(tier="S0", profile="small", codec="avro", enc=1e-6, dec=1e-6, rt=1e-6),
+        ],
+    }
+    html = build_summary_html(report, companion_stack_href="stack.html")
+    assert 'class="page-nav"' in html
+    assert 'href="stack.html"' in html
+    assert "Stack &amp; component times" in html
+    assert 'href="stack.html">stack &amp; data view</a>' in html
+
+
 def test_build_summary_html_win_rate_percentages() -> None:
     report = {
         "report_version": 9,

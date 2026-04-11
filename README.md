@@ -45,7 +45,7 @@ ksp-bench run --scenario small --formats json --baseline-report reports/prior/re
 ```bash
 ksp-bench viz reports/report.json -o reports/stack.html
 # also writes reports/summary.html (conclusions + comparison tables); use --no-summary to skip
-# then open reports/stack.html and reports/summary.html in a browser
+# the two pages cross-link for navigation; open either in a browser
 ```
 
 ## Avro
