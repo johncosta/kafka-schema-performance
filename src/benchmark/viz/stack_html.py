@@ -8,6 +8,13 @@ from pathlib import Path
 from typing import Any, cast
 
 
+def _profile_tab_slug(profile: str) -> str:
+    """ASCII id for tab/panel ids (payload_profile values are enum-like)."""
+
+    s = "".join(c if c.isalnum() else "-" for c in profile.strip().lower())
+    return s or "profile"
+
+
 def _mean_s(block: Any) -> float:
     if isinstance(block, dict):
         v = block.get("mean_s")
@@ -102,7 +109,7 @@ def _phase3_probe_sizes(row: dict[str, Any]) -> tuple[int | None, int | None]:
     return gi, zi
 
 
-def _row_section(row: dict[str, Any]) -> str:
+def _row_section(row: dict[str, Any], *, profile_in_heading: bool = True) -> str:
     profile = html.escape(str(row.get("payload_profile", "?")))
     codec = html.escape(str(row.get("codec", "?")))
     tier = html.escape(str(row.get("tier", "?")))
@@ -165,13 +172,146 @@ def _row_section(row: dict[str, Any]) -> str:
         "definitions.</p>"
     )
 
+    title = (
+        f'{profile} / <code>{codec}</code> <span class="tier">({tier})</span>'
+        if profile_in_heading
+        else f'<code>{codec}</code> <span class="tier">({tier})</span>'
+    )
+
     return (
-        f'<section class="result"><h2>{profile} / <code>{codec}</code> '
-        f'<span class="tier">({tier})</span></h2>'
+        f'<section class="result"><h2>{title}</h2>'
         f'{"".join(meta_lines)}'
         f"{pipeline}{note}"
         f'<div class="bars">{"".join(bar_html)}</div></section>'
     )
+
+
+def _ordered_profile_keys(
+    scenario_profiles: list[Any],
+    rows: list[dict[str, Any]],
+) -> list[str]:
+    """Tab order: scenario payload_profiles first, then any extra profiles from rows."""
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for p in scenario_profiles:
+        key = str(p).strip()
+        if key and key not in seen:
+            seen.add(key)
+            out.append(key)
+    for row in rows:
+        key = str(row.get("payload_profile", "")).strip()
+        if key and key not in seen:
+            seen.add(key)
+            out.append(key)
+    return out
+
+
+def _group_rows_by_profile(
+    rows: list[dict[str, Any]]
+) -> dict[str, list[dict[str, Any]]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        key = str(row.get("payload_profile", "?")).strip() or "?"
+        groups.setdefault(key, []).append(row)
+    return groups
+
+
+def _scenario_tabs_html(
+    profile_order: list[str], groups: dict[str, list[dict[str, Any]]]
+) -> str:
+    if not profile_order:
+        return "<p>No results in report.</p>"
+
+    tab_buttons: list[str] = []
+    panels: list[str] = []
+    for i, prof in enumerate(profile_order):
+        slug = _profile_tab_slug(prof)
+        tab_id = f"tab-{slug}"
+        panel_id = f"tabpanel-{slug}"
+        label = html.escape(prof)
+        selected = i == 0
+        aria_sel = "true" if selected else "false"
+        tab_class = "tab" + (" tab-active" if selected else "")
+        panel_class = "tab-panel" + (" tab-panel-active" if selected else "")
+        hidden = "" if selected else ' hidden=""'
+        tab_buttons.append(
+            f'<button type="button" class="{tab_class}" role="tab" '
+            f'id="{html.escape(tab_id)}" aria-selected="{aria_sel}" '
+            f'aria-controls="{html.escape(panel_id)}" '
+            f'data-tab-target="{html.escape(panel_id)}">{label}</button>',
+        )
+        inner = "\n".join(
+            _row_section(r, profile_in_heading=False) for r in groups.get(prof, [])
+        )
+        if not inner.strip():
+            inner = "<p>No rows for this profile.</p>"
+        panels.append(
+            f'<div class="{panel_class}" role="tabpanel" '
+            f'id="{html.escape(panel_id)}" '
+            f'aria-labelledby="{html.escape(tab_id)}" '
+            f'tabindex="0"{hidden}>{inner}</div>',
+        )
+
+    tabs_row = (
+        '<div class="scenario-tabs" data-scenario-tabs>'
+        '<div class="tablist" role="tablist" aria-label="Payload profile (scenario)">'
+        f'{"".join(tab_buttons)}'
+        "</div>"
+        f'{"".join(panels)}'
+        "</div>"
+    )
+    return tabs_row
+
+
+_TAB_SWITCH_JS = """
+<script>
+(function () {
+  var root = document.querySelector("[data-scenario-tabs]");
+  if (!root) return;
+  var tabs = root.querySelectorAll("button[data-tab-target]");
+  var panels = root.querySelectorAll("[role=tabpanel]");
+  function activate(panelId) {
+    tabs.forEach(function (t) {
+      var on = t.getAttribute("data-tab-target") === panelId;
+      t.classList.toggle("tab-active", on);
+      t.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    panels.forEach(function (p) {
+      var on = p.id === panelId;
+      p.classList.toggle("tab-panel-active", on);
+      if (on) { p.removeAttribute("hidden"); } else { p.setAttribute("hidden", ""); }
+    });
+  }
+  root.addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-tab-target]");
+    if (!btn || !root.contains(btn)) return;
+    var id = btn.getAttribute("data-tab-target");
+    if (id) activate(id);
+  });
+  root.addEventListener("keydown", function (e) {
+    var btn = e.target.closest("button[data-tab-target]");
+    if (!btn || !root.contains(btn)) return;
+    var list = Array.prototype.slice.call(tabs);
+    var idx = list.indexOf(btn);
+    if (idx < 0) return;
+    var next = null;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+      next = list[(idx + 1) % list.length];
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+      next = list[(idx - 1 + list.length) % list.length];
+    } else if (e.key === "Home") { next = list[0]; }
+    else if (e.key === "End") { next = list[list.length - 1]; }
+    if (next) {
+      e.preventDefault();
+      next.focus();
+      var tid = next.getAttribute("data-tab-target");
+      if (tid) activate(tid);
+    }
+  });
+})();
+</script>
+"""
 
 
 def build_stack_html(report: dict[str, Any]) -> str:
@@ -188,12 +328,17 @@ def build_stack_html(report: dict[str, Any]) -> str:
     iters = scen.get("timed_iterations", "?")
     ver = report.get("report_version", "?")
 
-    sections: list[str] = []
-    for row in report.get("results", []):
-        if isinstance(row, dict):
-            sections.append(_row_section(row))
-
-    body = "\n".join(sections) if sections else "<p>No results in report.</p>"
+    raw_results = report.get("results", [])
+    rows: list[dict[str, Any]] = [r for r in raw_results if isinstance(r, dict)]
+    scen_profiles_raw = profiles if isinstance(profiles, list) else []
+    scen_profiles = [p for p in scen_profiles_raw if p is not None]
+    groups = _group_rows_by_profile(rows)
+    order = _ordered_profile_keys(scen_profiles, rows)
+    if not order and rows:
+        order = list(groups.keys())
+    body = (
+        _scenario_tabs_html(order, groups) if rows else "<p>No results in report.</p>"
+    )
 
     iters_e = html.escape(str(iters))
     ver_e = html.escape(str(ver))
@@ -218,6 +363,7 @@ def build_stack_html(report: dict[str, Any]) -> str:
 <h1>Serialization stack &amp; component times</h1>
 {summary}
 {body}
+{_TAB_SWITCH_JS}
 </body>
 </html>
 """
@@ -285,6 +431,35 @@ h1 { font-size: 1.35rem; }
   margin: 0.5rem 0 0.75rem;
   line-height: 1.4;
 }
+.scenario-tabs { margin-top: 1rem; }
+.tablist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 0.35rem;
+}
+.tab {
+  font: inherit;
+  cursor: pointer;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: #eee;
+  color: #333;
+}
+.tab:hover { background: #e2e2e2; }
+.tab:focus-visible { outline: 2px solid #2d6a9f; outline-offset: 2px; }
+.tab.tab-active {
+  background: #fafafa;
+  border-color: #ccc;
+  border-bottom-color: #fafafa;
+  margin-bottom: -1px;
+  font-weight: 600;
+}
+.tab-panel { margin-top: 0; }
+.tab-panel[hidden] { display: none !important; }
 </style>
 """.strip()
 

@@ -32,6 +32,8 @@ def test_build_stack_html_includes_encode_decode_bars() -> None:
         ],
     }
     html = build_stack_html(report)
+    assert 'role="tablist"' in html
+    assert "data-scenario-tabs" in html
     assert "Encode (timed window)" in html
     assert "Decode (timed window)" in html
     assert "Round-trip (single timer)" in html
@@ -145,9 +147,12 @@ def test_build_stack_html_full_matrix_sections() -> None:
     }
     html = build_stack_html(report)
     assert html.count('<section class="result">') == 12
-    for p in profiles:
-        for c in codecs:
-            assert f"{p} / <code>{c}</code>" in html
+    assert html.count('role="tabpanel"') == 4
+    assert html.count('data-tab-target="tabpanel-') == 4
+    assert 'id="tabpanel-small"' in html
+    assert 'id="tabpanel-evolution"' in html
+    for c in codecs:
+        assert f"<code>{c}</code>" in html
     assert "avro, protobuf, json" in html
 
 
@@ -164,4 +169,6 @@ def test_write_stack_visualization_roundtrip(tmp_path: Path) -> None:
     out = tmp_path / "out.html"
     write_stack_visualization(src, out)
     assert out.is_file()
-    assert "Round-trip" in out.read_text(encoding="utf-8")
+    text = out.read_text(encoding="utf-8")
+    assert "Round-trip" in text
+    assert 'role="tablist"' in text
