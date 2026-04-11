@@ -92,7 +92,7 @@ def test_build_report_multi_profile_matrix() -> None:
         rubric_governance=None,
         rubric_maintainability=None,
     )
-    assert report["report_version"] == 6
+    assert report["report_version"] == 7
     assert "limitations" in report
     assert report["limitations"]["summary"]
     assert "artifact_integrity" in report
@@ -106,6 +106,28 @@ def test_build_report_multi_profile_matrix() -> None:
     }
     assert "measurement" in report
     assert report["scenario"]["size_and_cost"]["gzip_compresslevel"] == 6
+
+
+def test_build_report_s2_includes_registry_stats() -> None:
+    report = build_report(
+        profiles=[PayloadProfile.small],
+        tier="S2",
+        formats=["json"],
+        compression="zstd",
+        warmup=0,
+        iterations=2,
+        seed=1,
+        rubric_governance=None,
+        rubric_maintainability=None,
+    )
+    assert report["report_version"] == 7
+    assert report["scenario"]["tier"] == "S2"
+    assert "s2" in report["scenario"]
+    row = report["results"][0]
+    assert row["tier"] == "S2"
+    s2 = row["s2_registry"]
+    assert s2["fetch_new_tcp_each_iteration"]["mean_s"] >= 0
+    assert s2["fetch_reused_connection"]["mean_s"] >= 0
 
 
 def test_build_report_s1_scenario_block() -> None:

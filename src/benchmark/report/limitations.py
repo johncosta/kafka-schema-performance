@@ -11,8 +11,9 @@ LIMITATIONS: dict[str, Any] = {
         "multi-threaded producer pools or async pipelines.",
         "Low timed iteration counts increase statistical noise; raise --iterations "
         "before publishing headline figures.",
-        "Compare S0 vs S1 only across runs with matching scenario metadata "
-        "(profiles, seed, formats, tier, compression).",
+        "Compare S0 vs S1 vs S2 only across runs with matching scenario metadata "
+        "(profiles, seed, formats, tier, compression). S2 uses a loopback mock "
+        "registry; numbers are not comparable to real Schema Registry latency.",
         "Codec deltas on synthetic payloads do not predict every production workload; "
         "treat small gaps as inconclusive without scenario alignment.",
     ],

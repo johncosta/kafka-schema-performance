@@ -172,6 +172,8 @@ Versioned JSON schema or Pydantic models for:
 - **Implementation:** mock server with recorded latencies **or** Testcontainers SR; prefer one path for CI reproducibility.
 - Confluent wire format encoding path if that is the deployment target.
 
+**Delivered:** CLI **`--tier S2`** starts a **loopback** `ThreadingHTTPServer` mock with Confluent-style **`GET /schemas/ids/{id}`**; per-row **`s2_registry`** reports **`fetch_new_tcp_each_iteration`** vs **`fetch_reused_connection`** (keep-alive) plus encode/round-trip that include a warm registry GET before serialize; **`scenario.s2`** documents the mock; **`measurement.tier_s2_registry`** and **`report_version` 7**. Optional **`--registry-schema-id`**. CI smoke runs S2 once (json, low iterations).
+
 **Exit:** Optional job or flag; documented setup; results always tagged **environment-specific**.
 
 ### Phase 7 — S3 / S4 Kafka client paths (optional)

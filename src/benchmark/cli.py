@@ -83,7 +83,10 @@ def run_cmd(
         "S0",
         "--tier",
         "-t",
-        help="S Codec in-process; S1 codec + compression",
+        help=(
+            "S0 codec only; S1 codec + compression; "
+            "S2 codec + mock schema registry (loopback)"
+        ),
     ),
     formats: str = typer.Option(
         "all",
@@ -175,21 +178,28 @@ def run_cmd(
         min=0.0,
         help="Warn if round_trip mean exceeds baseline × (1 + this ratio)",
     ),
+    registry_schema_id: int = typer.Option(
+        1,
+        "--registry-schema-id",
+        min=1,
+        help="Tier S2 only: schema id for mock GET /schemas/ids/{id}",
+    ),
 ) -> None:
     """Run benchmark matrix and write report.json (+ report.md)."""
 
     profiles = _parse_scenarios(scenario)
-    if tier not in ("S0", "S1"):
-        raise typer.BadParameter("tier must be S0 or S1")
+    if tier not in ("S0", "S1", "S2"):
+        raise typer.BadParameter("tier must be S0, S1, or S2")
     tier_t: ScenarioTier = tier  # type: ignore[assignment]
     fmt_list = _parse_formats(formats)
-    if tier == "S0" and compression != "zstd":
-        # allow but note compression unused for S0
+    if tier in ("S0", "S2") and compression != "zstd":
+        # allow but note compression unused for timed S0/S2 codec path
         pass
     comp: str = compression
     if comp not in ("gzip", "zstd"):
         raise typer.BadParameter(
-            "compression must be gzip or zstd for S1; ignored for S0",
+            "compression must be gzip or zstd "
+            "(S1 timed path; S0/S2 ignore for codec timing)",
         )
 
     gov = governance_rubric
@@ -222,6 +232,7 @@ def run_cmd(
         s1_zstd_level=s1_zstd_level,
         baseline_report_path=str(baseline_report) if baseline_report else None,
         regression_warn_ratio=regression_warn_ratio,
+        registry_schema_id=registry_schema_id,
     )
     rc = report.get("regression_check")
     if isinstance(rc, dict) and not rc.get("skipped") and rc.get("warnings"):
