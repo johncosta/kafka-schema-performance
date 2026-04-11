@@ -40,6 +40,13 @@ Optional regression hints (same scenario fingerprint as the baseline `report.jso
 ksp-bench run --scenario small --formats json --baseline-report reports/prior/report.json
 ```
 
+**Stack visualization:** turn a `report.json` into a self-contained HTML page (conceptual encode → wire → decode flow, plus horizontal bars of **mean** time per measured component—including S2 registry fetches or S3/S4 batch rows when the report includes them):
+
+```bash
+ksp-bench viz reports/report.json -o reports/stack.html
+# then open reports/stack.html in a browser
+```
+
 ## Avro
 
 - **Library:** [fastavro](https://github.com/fastavro/fastavro) (see `pyproject.toml` for the pinned range).
