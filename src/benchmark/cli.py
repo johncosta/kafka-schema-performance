@@ -280,9 +280,26 @@ def viz_cmd(
         "--summary-output",
         help="Path for conclusions HTML (default: <output-dir>/summary.html).",
     ),
+    distributed: bool = typer.Option(
+        True,
+        "--distributed/--no-distributed",
+        help=(
+            "Also write S0/S1 footprint HTML next to --output "
+            "(unless --distributed-output is set)."
+        ),
+    ),
+    distributed_output: Path | None = typer.Option(
+        None,
+        "--distributed-output",
+        help=(
+            "Path for distributed footprint HTML "
+            "(default: <output-dir>/distributed.html)."
+        ),
+    ),
 ) -> None:
     """Encode→wire→decode stack diagram plus bar chart of mean times per component."""
 
+    from benchmark.viz.distributed_html import write_distributed_visualization
     from benchmark.viz.stack_html import write_stack_visualization
     from benchmark.viz.summary_html import write_summary_visualization
 
@@ -290,10 +307,15 @@ def viz_cmd(
     if summary:
         sum_path = summary_output or (output.parent / "summary.html")
 
+    dist_path: Path | None = None
+    if distributed:
+        dist_path = distributed_output or (output.parent / "distributed.html")
+
     write_stack_visualization(
         report_json,
         output,
         companion_summary_path=sum_path,
+        companion_distributed_path=dist_path,
     )
     typer.echo(f"Wrote {output}")
     if summary and sum_path is not None:
@@ -301,5 +323,14 @@ def viz_cmd(
             report_json,
             sum_path,
             companion_stack_path=output,
+            companion_distributed_path=dist_path,
         )
         typer.echo(f"Wrote {sum_path}")
+    if distributed and dist_path is not None:
+        write_distributed_visualization(
+            report_json,
+            dist_path,
+            companion_stack_path=output,
+            companion_summary_path=sum_path,
+        )
+        typer.echo(f"Wrote {dist_path}")

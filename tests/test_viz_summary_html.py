@@ -243,3 +243,26 @@ def test_build_summary_html_includes_kafka_e2e_section() -> None:
     html = build_summary_html(report)
     assert "Kafka-protocol end-to-end" in html
     assert "127.0.0.1:19092" in html
+
+
+def test_build_summary_html_includes_test_suite_ai_handoff() -> None:
+    report = {
+        "report_version": 8,
+        "scenario": {
+            "tier": "S0",
+            "payload_profiles": ["small"],
+            "formats": ["json"],
+            "compression": "zstd",
+            "timed_iterations": 1,
+        },
+        "results": [
+            _row(tier="S0", profile="small", codec="json", enc=1e-6, dec=1e-6, rt=1e-6),
+        ],
+    }
+    html = build_summary_html(report)
+    assert "Test suite (for external review)" in html
+    assert "gap analysis" in html
+    assert "pytest inventory" in html
+    assert "test_distributed_performance.py" in html
+    assert "test_kafka_distributed.py" in html
+    assert 'class="ai-handoff-pre"' in html

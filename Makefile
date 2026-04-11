@@ -67,4 +67,5 @@ report: test
 	test -f reports/make-report/report.json
 	$(VENV)/bin/ksp-bench viz reports/make-report/report.json -o reports/make-report/stack.html
 	test -f reports/make-report/summary.html
-	@echo "Wrote reports/make-report/report.json report.md stack.html summary.html"
+	test -f reports/make-report/distributed.html
+	@echo "Wrote reports/make-report/report.json report.md stack.html summary.html distributed.html"
