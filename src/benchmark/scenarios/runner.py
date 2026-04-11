@@ -80,6 +80,14 @@ MEASUREMENT_MODEL: dict[str, Any] = {
         "with --tier S0 and --tier S1; do not compare S1 rows to S0 from different "
         "reports without matching scenario metadata."
     ),
+    "tier_s1_phase_isolation": (
+        "S1 result rows include s1_phase_isolation when tier is S1: separate "
+        "perf_counter loops for compress-only and decompress-only on the fixed "
+        "post-warmup wire bytes, plus codec encode-only and decode-from-raw-wire "
+        "(no decompress). Compare these means to combined encode+compress / "
+        "decompress+decode in encode/decode blocks to see whether compressor or "
+        "codec dominates."
+    ),
     "tier_s2_registry": (
         "S2 adds loopback mock Schema Registry GET /schemas/ids/{id} before "
         "encode in timed encode and round-trip paths (HTTP keep-alive). "
@@ -490,6 +498,45 @@ def bench_codec(
         _ = codec.decode(raw)
         rt_times.append(time.perf_counter() - t0)
 
+    s1_phase_isolation: dict[str, Any] | None = None
+    if tier == "S1":
+        comp_only: list[float] = []
+        for _ in range(iterations):
+            t0 = time.perf_counter()
+            _ = _compress_s1_wire(
+                compression,
+                raw_wire,
+                s1_gzip_level=s1_gzip_level,
+                s1_zstd_level=s1_zstd_level,
+            )
+            comp_only.append(time.perf_counter() - t0)
+        decomp_only: list[float] = []
+        for _ in range(iterations):
+            t0 = time.perf_counter()
+            _ = decompress(compression, compressed_wire)
+            decomp_only.append(time.perf_counter() - t0)
+        codec_enc_only: list[float] = []
+        for _ in range(iterations):
+            t0 = time.perf_counter()
+            _ = codec.encode(event)
+            codec_enc_only.append(time.perf_counter() - t0)
+        codec_dec_raw: list[float] = []
+        for _ in range(iterations):
+            t0 = time.perf_counter()
+            _ = codec.decode(raw_wire)
+            codec_dec_raw.append(time.perf_counter() - t0)
+        s1_phase_isolation = {
+            "compress_wire_s": summarize_times(comp_only),
+            "decompress_wire_s": summarize_times(decomp_only),
+            "codec_encode_only_s": summarize_times(codec_enc_only),
+            "codec_decode_raw_wire_s": summarize_times(codec_dec_raw),
+            "note": (
+                "compress_wire_s / decompress_wire_s exclude serialize and "
+                "deserialize. codec_decode_raw_wire_s is decode of uncompressed "
+                "bytes (isolates codec from tier-S1 decompress cost)."
+            ),
+        }
+
     enc_stats = summarize_times(enc_times)
     dec_stats = summarize_times(dec_times)
     rt_stats = summarize_times(rt_times)
@@ -599,6 +646,8 @@ def bench_codec(
     }
     if s1_timed_compression is not None:
         out["s1_timed_compression"] = s1_timed_compression
+    if s1_phase_isolation is not None:
+        out["s1_phase_isolation"] = s1_phase_isolation
     return out
 
 

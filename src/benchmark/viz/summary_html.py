@@ -512,7 +512,8 @@ _TEST_SUITE_AI_HANDOFF_LINES: tuple[str, ...] = (
     "- test_report_render.py — Markdown report rendering from JSON.",
     "- test_regression.py — baseline fingerprint and regression_warn_ratio hints.",
     "- test_rubrics.py — governance / maintainability YAML merge into report.",
-    "- test_runner.py — bench_codec matrix, tiers S0–S4 shape, kafka_shaped sizes.",
+    "- test_runner.py — bench_codec matrix, tiers S0–S4 shape, kafka_shaped sizes, "
+    "S1 s1_phase_isolation.",
     "- test_stats.py — timing stats helpers.",
     "- test_metrics_stats_canned.py — fixed-sample percentiles; gzip/zstd helpers.",
     "- test_viz_distributed_html.py — distributed.html from report rows.",

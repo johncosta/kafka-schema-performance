@@ -91,6 +91,13 @@ def test_bench_codec_s1_zstd_timed_compression() -> None:
     assert r["compressed_size_bytes"] <= r["raw_size_bytes"]
     assert "encode_compressed_wire_mb_per_s" in r["encode"]
     assert "decode_compressed_input_mb_per_s" in r["decode"]
+    pi = r["s1_phase_isolation"]
+    assert isinstance(pi, dict)
+    enc_combo = float(r["encode"]["mean_s"])
+    enc_only = float(pi["codec_encode_only_s"]["mean_s"])
+    cmp_only = float(pi["compress_wire_s"]["mean_s"])
+    assert enc_combo >= enc_only
+    assert enc_combo >= cmp_only
 
 
 def test_bench_codec_confluent_envelope() -> None:
@@ -192,6 +199,17 @@ def test_build_report_exhaustive_matrix_all_profiles_formats_compression(
             ratio = row["s1_timed_compression"]["ratio_compressed_to_raw"]
             assert isinstance(ratio, (int, float))
             assert ratio == ratio
+            pi = row["s1_phase_isolation"]
+            assert isinstance(pi, dict)
+            for key in (
+                "compress_wire_s",
+                "decompress_wire_s",
+                "codec_encode_only_s",
+                "codec_decode_raw_wire_s",
+            ):
+                st = pi[key]
+                assert isinstance(st, dict)
+                assert float(st["mean_s"]) > 0
     else:
         for row in report["results"]:
             assert row["tier"] == tier

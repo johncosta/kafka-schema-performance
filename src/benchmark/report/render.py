@@ -101,6 +101,12 @@ def _fmt_sci(x: float) -> str:
     return f"{x:.6e}"
 
 
+def _dict_mean_s(block: object) -> float:
+    if isinstance(block, dict):
+        return float(block.get("mean_s", float("nan")))
+    return float("nan")
+
+
 def _fmt_intish(x: float) -> str:
     if math.isnan(x):
         return "nan"
@@ -445,6 +451,24 @@ def render_markdown(report: dict[str, Any]) -> str:
                         f"- Raw {s1c.get('raw_bytes')} B → compressed "
                         f"{s1c.get('compressed_bytes')} B",
                         f"- *{s1c.get('note', '')}*",
+                        "",
+                    ]
+                )
+            s1p = row.get("s1_phase_isolation")
+            if isinstance(s1p, dict):
+                dr = _fmt_sci(_dict_mean_s(s1p.get("codec_decode_raw_wire_s")))
+                lines.extend(
+                    [
+                        "**S1 phase isolation (PRD §6.6.1):**",
+                        "",
+                        f"- Compress wire only: mean "
+                        f"{_fmt_sci(_dict_mean_s(s1p.get('compress_wire_s')))} s",
+                        f"- Decompress wire only: mean "
+                        f"{_fmt_sci(_dict_mean_s(s1p.get('decompress_wire_s')))} s",
+                        f"- Codec encode only: mean "
+                        f"{_fmt_sci(_dict_mean_s(s1p.get('codec_encode_only_s')))} s",
+                        f"- Codec decode (raw wire, no decompress): mean {dr} s",
+                        f"- *{s1p.get('note', '')}*",
                         "",
                     ]
                 )

@@ -88,3 +88,5 @@ def test_render_markdown_s1_tier_section() -> None:
     md = render_markdown(report)
     assert "### Tier S1 (codec + compression)" in md
     assert "S1 compression footprint" in md
+    assert "S1 phase isolation (PRD §6.6.1)" in md
+    assert "Compress wire only" in md
