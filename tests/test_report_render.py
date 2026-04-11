@@ -29,6 +29,8 @@ def test_render_markdown_multi_profile_headings() -> None:
     assert "Compressed payload sizes" in md
     assert "## Limitations" in md
     assert "## Artifact integrity" in md
+    assert "### Evidence coverage (PRD §6.6)" in md
+    assert "Not measured (do not infer from this report alone)" in md
 
 
 def test_render_markdown_s3_tier_section() -> None:

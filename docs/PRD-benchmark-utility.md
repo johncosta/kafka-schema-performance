@@ -1,8 +1,8 @@
 # PRD: Serialization Benchmark Utility (Avro, Protobuf, JSON)
 
-**Document status:** Draft  
+**Document status:** Draft (gap-hardened)  
 **Owner:** Platform / Data Engineering  
-**Last updated:** 2026-04-07 *(stack metrics expanded)*  
+**Last updated:** 2026-04-11 *(test/evidence bar aligned with gap analysis)*  
 
 ---
 
@@ -10,7 +10,9 @@
 
 Define a **benchmark utility and evaluation framework** that compares **Apache Avro**, **Protocol Buffers (protobuf)**, and **JSON** (typically UTF-8 text with optional compression) under workloads relevant to event streaming, APIs, and log pipelines—especially in **Kafka**-adjacent contexts. The utility must produce **reproducible** numbers and **structured reports** for **codec-level** performance (serialize/deserialize in isolation), **pipeline-level** performance (clients, compression, schema registry, and related stack), wire/storage footprint, and qualitative dimensions such as **schema governance** and **maintainability**.
 
-This PRD describes *what* the service delivers and *how success is measured*; implementation details (language, harness libraries, CI) belong in a separate technical specification after this PRD is accepted.
+**Evidence bar:** Any **comparative claim** surfaced in machine or human reports (tables, win-rates, HTML viz, narrative) must be **traceable** to (a) named scenario tiers and fixtures, (b) **dimension-isolated** metrics where the research question requires them (encode vs decode vs compress—not only round-trip unless explicitly labeled), and (c) automated tests or **golden artifacts** that pin semantics. **Fixture-specific** ordering assertions (e.g. “JSON wire exceeds binary for profile X”) are allowed only when labeled as **profile- and harness-dependent**, not as universal format truths.
+
+This PRD describes *what* the service delivers, *how success is measured*, and *what evidence the test suite must eventually provide*; implementation details (language, harness libraries, CI layout) belong in the implementation plan / TDD and must not contradict Sections 8 and 11.
 
 ---
 
@@ -33,6 +35,8 @@ Teams choosing or migrating serialization formats need evidence beyond anecdotal
 - **Efficiency signals:** Serialized size, compression ratios, and estimated network/storage cost models.
 - **Governance lens:** Explicit criteria (not only benchmarks) for how each format behaves with **schema registries**, compatibility modes, and multi-team ownership.
 - **Maintainability lens:** Documented qualitative factors (tooling, debugging, onboarding) with scoring rubrics where possible.
+- **Dimension isolation:** The harness and tests must be able to separate **encode-only**, **decode-only**, **compress-only**, **decompress-only**, and **full pipeline** timings so conclusions are not silently dominated by one phase (Section 6.1.1, Section 11.1).
+- **Causal evidence:** Where feasible, capture **why** a format leads or lags for a fixture: encoded size, compression ratio, allocation pressure, schema-resolution cost—not only aggregate round-trip (Section 11.2).
 
 ### 3.2 Non-goals (initial release)
 
@@ -40,6 +44,14 @@ Teams choosing or migrating serialization formats need evidence beyond anecdotal
 - Benchmarking every serializer implementation in every language (start with **one primary language** for the harness; optional secondary clients later).
 - Replacing formal security review (schema injection, deserializer bombs) beyond noting **baseline threat considerations** in reports.
 - Full cost attribution to cloud spend (provide **models and formulas**; actual billing integration is out of scope unless added later).
+- **Universal cross-language performance laws** derived from this harness; any strict inequality (e.g. JSON wire > binary) is **fixture- and implementation-specific** unless measured across a declared matrix and still documented as environment-dependent.
+- Pretending **mock** schema registry or **single-broker** Kafka exercises equal **production realism** to TLS, SASL, multi-broker, and real Confluent components—those are phased goals (Section 11.5–11.6).
+
+### 3.3 Visualization and narrative discipline
+
+- **Reports and HTML viz** may summarize win-rates and tier tables; they must **degrade safely** when optional `report.json` fields are absent and must not imply conclusions **not supported** by the scenario set that produced the report.
+- **Automated tests** for viz SHALL progress beyond “string present” where practical: **golden** `report.json` fixtures with **hand-checked** win-rate or ranking expectations; tests that **win-rate math** matches canned inputs; tests that missing metrics do not render false “fastest” labels.
+- **Glossary and layer-cake** copy must stay aligned with which tiers are **measured** vs **simulated** vs **absent** in a given run.
 
 ---
 
@@ -76,6 +88,8 @@ A **versioned software package** (CLI and/or library) plus **fixtures** that:
 - **Reproducibility:** Document seeds, versions, and hardware class; fail runs if version metadata cannot be collected.
 - **Fairness:** Same logical payloads; avoid format-specific “cheating” (e.g. omitting unknown fields in one path only) unless the scenario explicitly tests that behavior.
 - **Transparency:** Persist raw timing samples or histograms where feasible; summarize with percentiles (p50/p90/p99).
+- **Configuration parity:** When comparing formats for a scenario, **fail or flag** mismatched configurations (e.g. generic Avro vs optimized protobuf) unless the scenario explicitly documents asymmetric modes.
+- **Variance:** For timing-sensitive assertions, define **warmup policy** and acceptable **run-to-run variance** (or use deterministic canned timing inputs in unit tests) so CI does not encode flaky platform truth.
 
 ---
 
@@ -118,6 +132,8 @@ A **versioned software package** (CLI and/or library) plus **fixtures** that:
 | **Error-path cost** | Time to fail on corrupt/truncated payload | Security-relevant; optional micro-scenario. |
 
 **Reporting:** Where the runtime allows, emit a **breakdown** (e.g. encode % / decode % / validation % of total CPU samples or wall time per phase). If only wall time is available, document measurement method (cooperative markers vs statistical sampling).
+
+**Normative test alignment:** The pytest suite SHALL gain coverage over time so that **encode-only** and **decode-only** assertions exist per format for at least one fixture per tier where those phases are separable in the harness; round-trip-only checks are **insufficient** for the core research question (JSON faster encode / slower decode, compression masking codec cost, etc.). See Section 11.1.
 
 ### 6.2 Network and storage efficiency
 
@@ -192,6 +208,50 @@ Reports should show **sensitivity**: e.g. ±20% payload size change impact on mo
 
 **Deliverable:** A **maintainability rubric** (1–5 per category) with short rationale; optional survey hooks for internal teams later.
 
+### 6.6 Test coverage, negative paths, and production realism (normative)
+
+This section tightens the **evidence bar** between metrics (Section 6), reports/viz (Section 7), and the **pytest** suite. Items are **prioritized** so MVP can stay fast while the PRD records the full target.
+
+#### 6.6.1 P0 — Dimension isolation and benchmark validity (highest priority)
+
+- **Encode-only and decode-only** automated checks per format where the harness exposes separate timers; not only round-trip or scenario aggregates.
+- **Compress-only / decompress-only** checks where S1 (or equivalent) separates timed compression from codec phases.
+- **Explicit labeling** in tests and reports when compression or registry I/O dominates wall time so codec rankings are not over-interpreted.
+- **Repeated-run variance / warmup:** document policy; add tests that metrics are **internally consistent** (e.g. canned timing inputs → expected aggregates) and CI smokes that do not encode platform-specific μs thresholds as universal truth.
+- **Fixture-scoped inequalities:** any strict ordering (e.g. JSON wire larger than binary for profile P) MUST name **P**, **tier**, **compression level**, and **harness language**; MUST NOT be documented as a universal law.
+
+#### 6.6.2 P1 — Causal evidence and payload diversity
+
+- **Per-format:** encoded byte size, compression ratio, and (where the runtime allows) allocation or memory pressure—not only end-to-end winners.
+- **Schema resolution:** distinguish **first-use** vs **steady-state** schema cost; tests that mock registry SHOULD simulate **cold vs warm** cache explicitly so “registry overhead” is not only a best-case HTTP loopback.
+- **Payload matrix** beyond small/medium/large: deeply nested objects; high-cardinality repeated fields; sparse optional fields; many small scalars; large strings/blobs; numeric-heavy shapes; evolution cases (add/remove/rename); mixed nullability—so JSON-vs-binary conclusions are not an artifact of a single friendly shape.
+
+#### 6.6.3 P1 — Negative and adversarial decode paths
+
+Round-trip success on golden bytes is necessary but optimistic. The suite SHOULD add **expected-failure** cases: malformed payloads, truncated messages, wrong schema ID, incompatible evolution, unknown fields, invalid UTF-8 where applicable, partial decompression failure—so a format cannot appear “fast” by skipping validation or failing open.
+
+#### 6.6.4 P2 — Schema registry production realism
+
+Beyond **mock** registry HTTP (S2): phased tests or integration environments for **real** Confluent-compatible registry (or declared alternative), serializer client caching, auth/TLS, retry/backoff, compatibility mode effects, and **registry unavailable** behavior. Mock paths remain valuable but MUST be labeled as non-production in reports.
+
+#### 6.6.5 P2 — Kafka production realism
+
+Current **single happy-path** broker produce/consume proves wiring, not operational equivalence. Phase in: TLS, SASL, multi-broker, partitioned topics, varying batch sizes, key vs value serialization, producer acks modes, idempotent producer settings, client- vs broker-level compression interactions, consumer lag or end-to-end latency metrics where feasible, rebalance/retry stress, **large-message** boundaries, backpressure, **poison messages** / DLQ expectations. Each addition MUST appear in the layer-cake / limitations text for the run.
+
+#### 6.6.6 Under-asserted metrics (explicit backlog)
+
+Until covered, reports SHOULD surface these as **N/A** or **not measured** rather than implying coverage: p95/p99 (not only mean), throughput under sustained load, compression ratio per tier, decode error rates, consumer lag, reproducibility across repeated runs, strict variance thresholds.
+
+#### 6.6.7 Visualization and report semantics (tests)
+
+- **Golden `report.json`** (and selective HTML) fixtures with hand-checked expectations for win-rate, rankings, and “fastest” labels.
+- **Math tests** for win-rate and comparison tables from known inputs.
+- **Safe degradation** when optional fields are missing—no fabricated rankings.
+
+#### 6.6.8 CI without Docker (required path)
+
+Provide a **narrow in-process** suite with deterministic inputs, **canned timing** or micro-benchmarks bounded by variance rules, **mock** Kafka transport for producer/consumer/report-merge logic where applicable, and golden validation—so **meaningful CI** runs on hosts without Kafka or Testcontainers, while broker tests remain optional or scheduled.
+
 ---
 
 ## 7. Reporting and comparability
@@ -199,6 +259,7 @@ Reports should show **sensitivity**: e.g. ±20% payload size change impact on mo
 - **Baseline report:** Table comparing the three formats across all scenarios with **confidence intervals** or percentile spread where possible.
 - **Narrative appendix:** Governance and maintainability scorecards with references to internal standards.
 - **Artifact integrity:** Hash of fixture inputs; list of dependency versions (SBOM optional follow-up).
+- **Honest scope:** Each release notes which Section **6.6** priorities are implemented vs backlog; HTML viz and summary win-rates MUST align with that scope (Section 3.3).
 
 ---
 
@@ -209,6 +270,9 @@ Reports should show **sensitivity**: e.g. ±20% payload size change impact on mo
 3. Where supported by the harness, reports include **fine-grained serialize/decode/validation** breakdown (Section 6.1.1) or a documented reason (e.g. runtime limits).
 4. Governance and maintainability sections use a **published rubric** with explicit weights.
 5. Documentation states **limitations** (single-node CPU, which stack layers are real vs simulated, no cross-region latency unless run says otherwise).
+6. **In repo:** `tests/test_runner.py` asserts distinct **encode** and **decode** means on S0 rows; `tests/test_metrics_stats_canned.py` pins **percentile math** on fixed samples; `tests/test_codecs_negative_decode.py` covers **expected-failure** decodes (Section 6.6.1). Further isolation (compress-only fractions, canned wall-clock aggregates) remains incremental backlog.
+7. **In repo:** `examples/reports/golden_two_codecs.report.json` plus `tests/test_golden_report_win_rate.py` and **`aggregate_codec_win_rates`** in `benchmark.viz.summary_html` validate **win-rate math** and summary HTML for that fixture (Section 6.6.7).
+8. **In repo:** **`make test-ci`** (pytest `-m "not kafka"` + `ksp-bench` S0–S4 smokes) is the **default CI** path without Docker; **`make test`** runs Kafka E2E when Docker is available (Section 6.6.8).
 
 ---
 
@@ -221,6 +285,12 @@ Reports should show **sensitivity**: e.g. ±20% payload size change impact on mo
 | JSON ambiguity (floats, field order, Unicode) | Define canonical JSON generation; use a reference serializer. |
 | Registry or network noise dominates | Separate **S0–S4** (or equivalent) scenario tiers; never compare codec-only to end-to-end without labeling. |
 | Stack benchmarks are environment-specific | Pin client, broker, and OS versions; report hardware class; avoid cross-repo numeric targets. |
+| **Hard-coded inequalities** (e.g. JSON wire > binary) encode harness bias | Restrict to **named fixtures**; label as non-universal; prefer structural metric tests + variance policy (Sections 3.2, 6.6.1). |
+| **“Fast default pytest”** implies deep correctness | Document smoke vs deep tiers; expand Section 6.6 backlog in implementation plan; keep summary viz scope honest (Section 3.3). |
+| **Viz exceeds tested semantics** | Golden reports; math tests; safe missing-field behavior (Section 6.6.7). |
+| **Mock registry / single broker** imply production realism | Layer-cake + limitations text; phase P2 scenarios (Sections 6.6.4–6.6.5). |
+| **Compression masks codec story** | Report encode/decode/compress fractions; separate tests (Sections 6.1.1, 6.6.1). |
+| **Python runtime effects** (C-accelerated JSON vs wrapper-heavy Avro) | Document in limitations; consider secondary harness language (Open questions). |
 
 **Open questions**
 
@@ -233,7 +303,7 @@ Reports should show **sensitivity**: e.g. ±20% payload size change impact on mo
 
 ## 10. Out of scope for this PRD
 
-Implementation architecture, repository layout, and test plan are specified in a follow-on **Technical Design Document (TDD)** after goals and metrics are ratified.
+Low-level implementation architecture and repository layout remain in the **implementation plan** and/or **TDD**. **Normative test and evidence requirements** for benchmarking are now part of this PRD (**Section 6.6**, **Section 3.3**, **Section 8 items 6–8**); the implementation plan MUST trace deliverables to those sections.
 
 ---
 
@@ -251,4 +321,4 @@ Implementation architecture, repository layout, and test plan are specified in a
 |----------|--------|-------------|-------------|-------------------|---------------|---------------|------------------|-------------------|-------------------------|
 | Small event | … | … | … | … | … | … | … | … | … |
 
-*(Placeholder—real values come from the harness. Split encode/decode columns appear when Section 6.1.1 instrumentation is available.)*
+*(Placeholder—real values come from the harness. Split encode/decode columns are required once Section 6.6.1 P0 coverage is met; until then reports must state the gap explicitly.)*

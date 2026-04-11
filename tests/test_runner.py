@@ -38,6 +38,28 @@ def test_bench_codec_smoke_s0() -> None:
     assert not math.isnan(rt["round_trip_mb_per_s"])
 
 
+def test_s0_report_rows_expose_distinct_encode_decode_timings() -> None:
+    """PRD §6.6.1: S0 rows expose encode-only and decode-only means."""
+
+    report = build_report(
+        profiles=[PayloadProfile.small],
+        tier=cast(ReportTier, "S0"),
+        formats=["json", "avro", "protobuf"],
+        compression=cast(CompressionAlg, "zstd"),
+        warmup=0,
+        iterations=2,
+        seed=1,
+        rubric_governance=None,
+        rubric_maintainability=None,
+    )
+    for row in report["results"]:
+        assert row["tier"] == "S0"
+        enc = row["encode"]["mean_s"]
+        dec = row["decode"]["mean_s"]
+        assert isinstance(enc, float) and enc == enc and enc > 0
+        assert isinstance(dec, float) and dec == dec and dec > 0
+
+
 def test_bench_codec_tracemalloc_sample() -> None:
     r = bench_codec(
         JsonCodec(),

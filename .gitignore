@@ -43,5 +43,6 @@ build/
 .ruff_cache/
 .mypy_cache/
 .pytest_cache/
-reports/
+# Benchmark output at repo root only (not examples/reports/).
+/reports/
 

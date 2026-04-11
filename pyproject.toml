@@ -83,6 +83,6 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
-    "distributed: large-payload harness and/or Kafka E2E (see tests/integration)",
+    "distributed: in-process S0/S1 footprint (tests/test_distributed_performance.py)",
     "kafka: Kafka-protocol broker tests (compose or Testcontainers; needs .[kafka])",
 ]

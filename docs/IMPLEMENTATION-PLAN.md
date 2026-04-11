@@ -2,7 +2,7 @@
 
 **Status:** Draft  
 **References:** [PRD-benchmark-utility.md](./PRD-benchmark-utility.md)  
-**Last updated:** 2026-04-07  
+**Last updated:** 2026-04-11  
 
 This document turns the PRD into a **phased delivery plan**: repository shape, core abstractions, scenario tiers (S0–S4), reporting, and exit criteria per milestone. It is the working substitute for a full TDD until low-level design choices are locked.
 
@@ -25,9 +25,9 @@ This document turns the PRD into a **phased delivery plan**: repository shape, c
 |----------|--------|
 | **Harness language** | **Python 3.11+** — package `benchmark` under `src/`, CLI **`ksp-bench`** (Typer) |
 | **Libraries** | **fastavro**, **protobuf** (generated `event_pb2`), **orjson**, **zstandard** / **gzip** for tier S1 |
-| **MVP scenario tiers** | **S0** (codec in-process) and **S1** (encode → compress → decompress → decode); **S2–S4** not implemented yet |
-| **Registry** | Not wired; **rubrics** YAML attached to reports for governance / maintainability metadata |
-| **Kafka in CI** | **None** (no producer/consumer path in default CI) |
+| **MVP scenario tiers** | **S0–S4** implemented (`--tier all` merges into one report); **S2** = loopback mock registry; **S3/S4** = in-memory batch paths (no real Kafka client in timed path) |
+| **Registry** | **S2** mock HTTP only for timed fetches; **rubrics** YAML attached to reports |
+| **Kafka in CI** | **Default GitHub Actions:** `make test-ci` (pytest `-m "not kafka"` + CLI smokes, no Docker). **Full broker E2E:** `make test` / `make test-kafka` locally or in a job that provides Docker + `KSP_KAFKA_BOOTSTRAP` |
 | **Stats** | `time.perf_counter` samples; **p50/p90/p99**, mean, records/s, MB/s |
 
 Fork / alternate stacks: use the same scenario labels; pin library versions in each report’s **environment** block.
@@ -110,7 +110,7 @@ Versioned JSON schema or Pydantic models for:
 - CLI stub: `run --scenario small --formats all --tier S0 --output-dir reports/`.
 - **Reproducibility:** collect versions; fail or warn if critical metadata missing (configurable).
 - **CI:** lint + typecheck + unit tests on **non-benchmark** code (generators, report merge, checksums).
-- **Makefile:** `make install`, `make lint`, `make test` (GitHub Actions runs the same targets). `make install` uses **`.[dev,kafka]`**; **`make test`** starts **Docker** Redpanda, runs **full pytest** (including Kafka E2E), tears the broker down, then **`ksp-bench`** tier smokes. Local `make install` creates **`.venv`** and installs there (PEP 668–safe on Homebrew Python).
+- **Makefile:** `make install`, `make lint`, `make test` (GitHub Actions runs the same targets). `make install` uses **`.[dev,kafka]`**; **`make test`** starts **Docker** Kafka (**KRaft**, no ZooKeeper), runs **full pytest** (including Kafka E2E), tears the broker down, then **`ksp-bench`** tier smokes. Local `make install` creates **`.venv`** and installs there (PEP 668–safe on Homebrew Python).
 - **Pre-commit or CI:** format (e.g. black/ruff format).
 
 **Exit:** CI green; `run --help` works; empty or placeholder report structure validates.
@@ -207,8 +207,8 @@ Versioned JSON schema or Pydantic models for:
 | **Stats** | Percentile helper against known tiny sample; monotonicity sanity. |
 | **Report** | `build_report` exhaustive matrix test: all payload profiles × `avro/protobuf/json` × tiers S0–S4 × `gzip/zstd` scenario compression (minimal iterations). `make test` CLI smokes repeat that matrix via `ksp-bench`. Markdown contains tier labels. |
 | **Distributed-style proxy** | `tests/test_distributed_performance.py` — `@pytest.mark.distributed`: **large** / **medium** wire (S0) and **S1** compressed size where JSON is larger than Avro/Protobuf on fixtures (in-process only). |
-| **Kafka E2E** | `docker/docker-compose.kafka.yml` (Redpanda, Kafka protocol). **`make test`** brings the broker up and sets **`KSP_KAFKA_BOOTSTRAP`** for the full pytest run; **`make test-kafka`** runs only **`pytest tests/integration -m kafka`**. `tests/integration/` — `@pytest.mark.kafka`: synchronous produce + consume via `kafka-python-ng`; metrics as **`kafka_e2e`** in `report.json`. **Summary HTML** renders a Kafka section when that key exists. Ad-hoc Testcontainers if **`KSP_USE_TESTCONTAINERS=1`** (no compose). |
-| **Visualization** | `ksp-bench viz report.json -o stack.html` — HTML stack flow + mean-time bars from JSON (encode/decode/round-trip; S2/S3/S4 extras when present). **Five tier tabs** (S0–S4) always; empty tiers show a note referencing the scenario tier. **Profile tabs** inside tiers that have rows; glossary explains tiers. Summary lists **scenario tier**, **profiles**, **formats**, **scenario compression**, **iterations**; rows add **Phase-3 gzip/zstd** probes and **S1** timed compressed sizes. **Same command** writes **`summary.html`** (default, next to `-o`): **aggregate codec win %** across all tier×profile metric head-to-heads (fastest time or smallest bytes; ties split), headline bullets when round-trip spread exceeds a threshold, per **tier × profile** comparison tables (best-per-column highlights, optional S1 compressed / S3 / S4 columns), **regression_check** warnings, and **limitations** text—use `--no-summary` or `--summary-output` to override. |
+| **Kafka E2E** | `docker/docker-compose.kafka.yml` (**Apache Kafka**, **KRaft** single node). **`make test`** brings the broker up and sets **`KSP_KAFKA_BOOTSTRAP`** for the full pytest run; **`make test-kafka`** runs only **`pytest tests/integration -m kafka`**. `tests/integration/` — `@pytest.mark.kafka`: synchronous produce + consume via `kafka-python-ng`; metrics as **`kafka_e2e`** in `report.json`. **Summary HTML** renders a Kafka section when that key exists. Ad-hoc Testcontainers if **`KSP_USE_TESTCONTAINERS=1`** (no compose). |
+| **Visualization** | `ksp-bench viz report.json -o stack.html` — HTML stack flow + mean-time bars from JSON (encode/decode/round-trip; S2/S3/S4 extras when present). **Five tier tabs** (S0–S4) always; empty tiers show a note referencing the scenario tier. **Profile tabs** inside tiers that have rows; glossary explains tiers. Summary lists **scenario tier**, **profiles**, **formats**, **scenario compression**, **iterations**; rows add **Phase-3 gzip/zstd** probes and **S1** timed compressed sizes. **Same command** writes **`summary.html`** (default, next to `-o`): **aggregate codec win %** across all tier×profile metric head-to-heads (fastest time or smallest bytes; ties split), headline bullets when round-trip spread exceeds a threshold, per **tier × profile** comparison tables (best-per-column highlights, optional S1 compressed / S3 / S4 columns), **regression_check** warnings, and **limitations** text—use `--no-summary` or `--summary-output` to override. Also writes **`distributed.html`**: **S0 wire** + **S1 compressed** tables per profile (distributed-style footprint), **`kafka_e2e`** when present; **`--no-distributed`** / **`--distributed-output`** mirror the summary flags. Stack, summary, and distributed pages **cross-link**. |
 | **Benchmarks** | Not run in default CI (noisy); optional scheduled job or `--quick` smoke (few iterations). |
 
 ---
@@ -222,6 +222,9 @@ Versioned JSON schema or Pydantic models for:
 | (3) Fine-grained breakdown or documented gap | Phase 2 (markers + narrative) |
 | (4) Rubrics with weights | Phase 4 |
 | (5) Limitations documented | Phase 8 |
+| (6) Encode/decode isolated tests or explicit gap | Post–Phase 2; tracks **PRD §6.6.1 P0** |
+| (7) Golden report / viz semantic tests | Post–Phase 5; tracks **PRD §6.6.7** |
+| (8) CI without Docker (deterministic suite) | Phase 2 smoke + expansion per **PRD §6.6.8** |
 
 ---
 
@@ -235,13 +238,15 @@ Versioned JSON schema or Pydantic models for:
 
 ## 9. Next actions (checklist)
 
-- [ ] Approve harness language and MVP tier scope (§2).  
-- [ ] Create Phase 0 scaffold PR (branch from `main`).  
-- [ ] Add `CONTRIBUTING.md` snippet: how to add a new payload profile.  
-- [ ] After Phase 2: sample public report checked into `examples/` (redacted env) for review demos.  
+- [x] Approve harness language and MVP tier scope (§2).  
+- [x] Create Phase 0 scaffold PR (branch from `main`).  
+- [x] Add `CONTRIBUTING.md`: how to add a new payload profile; Makefile targets.  
+- [x] Sample hand-checked `report.json` under `examples/reports/` for viz / win-rate semantics (no environment block).  
 
 ---
 
 ## 10. Open items inherited from PRD
 
 See PRD §9 **Open questions** (registry vendor, compliance for fixtures, Kafka in scope). Revisit after Phase 0 kickoff.
+
+**PRD §6.6 (gap-hardened 2026-04-11):** normative backlog for dimension-isolated tests, negative decode paths, payload matrix expansion, real registry/Kafka realism, golden viz semantics, and CI-without-Docker—implementation milestones should reference that section when scheduling work beyond current pytest inventory.

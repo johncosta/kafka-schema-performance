@@ -24,7 +24,7 @@ pytest tests/integration -m kafka -v
 # or: make test-kafka
 ```
 
-Without **`KSP_KAFKA_BOOTSTRAP`** (and without **`KSP_USE_TESTCONTAINERS=1`**), `@pytest.mark.kafka` tests **skip** so default `pytest` stays fast. Redpanda in compose is **Kafka API–compatible**; metrics are labeled via **`KSP_KAFKA_BROKER_LABEL`** (optional).
+Without **`KSP_KAFKA_BOOTSTRAP`** (and without **`KSP_USE_TESTCONTAINERS=1`**), `@pytest.mark.kafka` tests **skip** so default `pytest` stays fast. Compose runs **Apache Kafka in KRaft mode** (no ZooKeeper). **`KSP_KAFKA_BROKER_LABEL`** tags metrics (optional).
 
 ## Run benchmarks
 
@@ -52,12 +52,13 @@ Optional regression hints (same scenario fingerprint as the baseline `report.jso
 ksp-bench run --scenario small --formats json --baseline-report reports/prior/report.json
 ```
 
-**Stack visualization:** turn a `report.json` into a self-contained HTML page (conceptual encode → wire → decode flow, plus horizontal bars of **mean** time per measured component—including S2 registry fetches or S3/S4 batch rows when the report includes them). **Top-level tabs are always all benchmark tiers** (S0–S4); only the scenario tier (and any other tier present in `results`) has data, the rest show a short empty state. Inside a tier, **payload profile** tabs group codecs. A collapsible **What do benchmark tiers mean?** block defines S0–S4. The header lists **scenario tier**, **profiles**, **formats**, and **scenario compression**; each result shows **Phase-3 gzip and zstd** probe totals from `compressed_payload_bytes`, and **S1** rows add the **timed compressed** byte length. **Time bars** share a **common width scale per metric** (e.g. all “Encode” bars use the same maximum across the report) so you can compare codecs and profiles visually. A companion **`summary.html`** (same `viz` command) adds an **aggregate win-rate table** (% of comparisons where each codec was fastest or smallest, with ties split), **headline conclusions**, **tier × profile** comparison tables with best-per-metric highlights, and surfaces **regression** and **limitations** text from the JSON.
+**Stack visualization:** turn a `report.json` into a self-contained HTML page (conceptual encode → wire → decode flow, plus horizontal bars of **mean** time per measured component—including S2 registry fetches or S3/S4 batch rows when the report includes them). **Top-level tabs are always all benchmark tiers** (S0–S4); only the scenario tier (and any other tier present in `results`) has data, the rest show a short empty state. Inside a tier, **payload profile** tabs group codecs. A collapsible **What do benchmark tiers mean?** block defines S0–S4. The header lists **scenario tier**, **profiles**, **formats**, and **scenario compression**; each result shows **Phase-3 gzip and zstd** probe totals from `compressed_payload_bytes`, and **S1** rows add the **timed compressed** byte length. **Time bars** share a **common width scale per metric** (e.g. all “Encode” bars use the same maximum across the report) so you can compare codecs and profiles visually. A companion **`summary.html`** (same `viz` command) adds an **aggregate win-rate table** (% of comparisons where each codec was fastest or smallest, with ties split), **headline conclusions**, **tier × profile** comparison tables with best-per-metric highlights, and surfaces **regression** and **limitations** text from the JSON. The summary page ends with a **collapsible plain-text pytest inventory** (markers, modules, suggested gap-analysis prompts) meant to be copied into another model together with `report.json`. A third page, **`distributed.html`**, tables **S0 raw wire** and **S1 timed compressed** bytes per codec and profile (the same footprint angles as `tests/test_distributed_performance.py`), plus **`kafka_e2e`** when present. All three pages **cross-link** in the header.
 
 ```bash
 ksp-bench viz reports/report.json -o reports/stack.html
-# also writes reports/summary.html (conclusions + comparison tables); use --no-summary to skip
-# the two pages cross-link for navigation; open either in a browser
+# also writes reports/summary.html and reports/distributed.html by default;
+# use --no-summary / --no-distributed to skip either companion
+# use --summary-output / --distributed-output to set paths
 ```
 
 ## Avro
@@ -94,11 +95,14 @@ Use the [Makefile](Makefile) so local runs match CI. The first `make install` cr
 ```bash
 make install   # create .venv if needed, then editable install with dev extras
 make lint      # ruff, black --check, mypy (uses .venv)
-make test      # Docker Redpanda → full pytest (incl. Kafka E2E) → CLI smoke (same as CI)
+make test-ci   # pytest -m "not kafka" + ksp-bench S0–S4 smokes — no Docker (same as GitHub Actions)
+make test      # Docker Kafka (KRaft) → full pytest (incl. Kafka E2E) → same CLI smokes as test-ci
 make report    # same as make test, then --tier all (S0–S4 in one report) + stack.html → reports/make-report/
 ```
 
-`make test` starts **Docker Compose** (`docker/docker-compose.kafka.yml`, Redpanda on **127.0.0.1:19092**), runs the **full `pytest`** suite (including **`@pytest.mark.distributed`** in-process checks and **`@pytest.mark.kafka`** broker tests with **`KSP_KAFKA_BOOTSTRAP`**), tears the broker down, then runs **`ksp-bench`** for **every tier (S0–S4)** with **`--scenario small,medium,large,evolution`**, **`--formats all`**, and **both** **`--compression zstd`** and **`--compression gzip`** (separate `/tmp/ksp-{tier}-{alg}/report.json` each). **S3/S4** passes **`--batch-size 8`**. **Docker** is required for `make test` / CI.
+**CI** (`.github/workflows/ci.yml`) runs **`make test-ci`** so hosts without Docker still get a full deterministic suite (PRD §6.6.8). **`make test`** additionally starts **Docker Compose** (`docker/docker-compose.kafka.yml`, **Apache Kafka** on **127.0.0.1:19092** in **KRaft** combined mode), runs **`pytest`** with **`KSP_KAFKA_BOOTSTRAP`** so **`@pytest.mark.kafka`** integration tests execute, tears the broker down, then runs the same **`ksp-bench`** matrix as **`test-ci`** (**`--scenario small,medium,large,evolution`**, **`--formats all`**, **zstd** and **gzip** per tier, **`--batch-size 8`** for S3/S4). Use **`make test`** before release or when changing Kafka E2E code.
+
+Example **golden** `report.json` (hand-checked win-rate semantics for viz tests) lives under **`examples/reports/`**. Extending payloads and codecs is described in **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
 To use another Python for creating the venv, run `python3.12 -m venv .venv` yourself, then `make install` (the existing `.venv` is reused).
 

@@ -8,6 +8,7 @@ import pytest
 from benchmark.generate.records import PayloadProfile
 from benchmark.metrics.compress import CompressionAlg
 from benchmark.scenarios.runner import ReportTier, ScenarioTier, build_report
+from benchmark.viz.distributed_html import write_distributed_visualization
 from benchmark.viz.stack_html import (
     TIER_DESCRIPTIONS,
     TIER_ORDER,
@@ -384,6 +385,28 @@ def test_build_stack_html_includes_companion_summary_link() -> None:
     assert "Performance summary" in html
 
 
+def test_build_stack_html_includes_companion_distributed_link() -> None:
+    report = {
+        "report_version": 8,
+        "scenario": {
+            "tier": "S0",
+            "payload_profiles": ["small"],
+            "formats": ["json"],
+            "compression": "zstd",
+            "timed_iterations": 10,
+        },
+        "results": [_minimal_row(tier="S0", profile="small", codec="json")],
+    }
+    html = build_stack_html(
+        report,
+        companion_summary_href="summary.html",
+        companion_distributed_href="distributed.html",
+    )
+    assert 'href="summary.html"' in html
+    assert 'href="distributed.html"' in html
+    assert "Distributed footprint" in html
+
+
 def test_write_stack_visualization_roundtrip(tmp_path: Path) -> None:
     src = tmp_path / "report.json"
     src.write_text(
@@ -415,10 +438,33 @@ def test_write_stack_visualization_cross_link_paths(tmp_path: Path) -> None:
     )
     stack = tmp_path / "nested" / "stack.html"
     summary = tmp_path / "summary.html"
-    write_stack_visualization(src, stack, companion_summary_path=summary)
-    write_summary_visualization(src, summary, companion_stack_path=stack)
+    distributed = tmp_path / "distributed.html"
+    write_stack_visualization(
+        src,
+        stack,
+        companion_summary_path=summary,
+        companion_distributed_path=distributed,
+    )
+    write_summary_visualization(
+        src,
+        summary,
+        companion_stack_path=stack,
+        companion_distributed_path=distributed,
+    )
+    write_distributed_visualization(
+        src,
+        distributed,
+        companion_stack_path=stack,
+        companion_summary_path=summary,
+    )
     stack_txt = stack.read_text(encoding="utf-8")
     summary_txt = summary.read_text(encoding="utf-8")
+    dist_txt = distributed.read_text(encoding="utf-8")
     assert "../summary.html" in stack_txt
+    assert "../distributed.html" in stack_txt
     assert 'href="nested/stack.html"' in summary_txt
+    assert "distributed.html" in summary_txt
     assert "stack &amp; data view" in summary_txt
+    assert "distributed footprint" in summary_txt
+    assert 'href="nested/stack.html"' in dist_txt
+    assert 'href="summary.html"' in dist_txt

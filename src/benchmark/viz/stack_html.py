@@ -6,7 +6,9 @@ import html
 import json
 import os
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
+
+VizNavPage = Literal["stack", "summary", "distributed"]
 
 # Display order for top-level tier tabs when a report mixes row tiers.
 TIER_ORDER: tuple[str, ...] = ("S0", "S1", "S2", "S3", "S4")
@@ -492,6 +494,61 @@ def companion_page_nav_html(*, href: str | None, link_text: str) -> str:
     return f'<p class="page-nav"><a href="{eh}">{lt}</a></p>'
 
 
+def companion_viz_nav_html(
+    *,
+    stack_href: str | None,
+    summary_href: str | None,
+    distributed_href: str | None,
+    current: VizNavPage,
+) -> str:
+    """Cross-links between stack, summary, and distributed HTML (omit ``current``)."""
+
+    items: list[tuple[str, str, str]] = [
+        ("stack", stack_href or "", "Stack & component times"),
+        ("summary", summary_href or "", "Performance summary"),
+        ("distributed", distributed_href or "", "Distributed footprint"),
+    ]
+    parts: list[str] = []
+    for name, href, label in items:
+        if not href or name == current:
+            continue
+        eh = html.escape(href, quote=True)
+        lt = html.escape(label)
+        parts.append(f'<a href="{eh}">{lt}</a>')
+    if not parts:
+        return ""
+    return f'<p class="page-nav">{" · ".join(parts)}</p>'
+
+
+def build_viz_sibling_nav_html(
+    *,
+    current_html: Path,
+    stack_output: Path,
+    summary_output: Path | None,
+    distributed_output: Path | None,
+    current: VizNavPage,
+) -> str:
+    """Relative navigation among viz outputs for ``current_html``."""
+
+    stack_href = relative_viz_href(from_html=current_html, to_html=stack_output)
+    summary_href = (
+        relative_viz_href(from_html=current_html, to_html=Path(summary_output))
+        if summary_output is not None
+        else None
+    )
+    distributed_href = (
+        relative_viz_href(from_html=current_html, to_html=Path(distributed_output))
+        if distributed_output is not None
+        else None
+    )
+    return companion_viz_nav_html(
+        stack_href=stack_href,
+        summary_href=summary_href,
+        distributed_href=distributed_href,
+        current=current,
+    )
+
+
 _TAB_SWITCH_JS = """
 <script>
 (function () {
@@ -563,6 +620,8 @@ def build_stack_html(
     report: dict[str, Any],
     *,
     companion_summary_href: str | None = None,
+    companion_distributed_href: str | None = None,
+    viz_nav_html: str | None = None,
 ) -> str:
     scen = report.get("scenario")
     if not isinstance(scen, dict):
@@ -615,10 +674,17 @@ def build_stack_html(
         f"<code>report_version</code> {ver_e}</p>"
     )
 
-    nav = companion_page_nav_html(
-        href=companion_summary_href,
-        link_text="Performance summary →",
-    )
+    if viz_nav_html is not None:
+        nav = viz_nav_html
+    elif companion_summary_href or companion_distributed_href:
+        nav = companion_viz_nav_html(
+            stack_href="",
+            summary_href=companion_summary_href,
+            distributed_href=companion_distributed_href,
+            current="stack",
+        )
+    else:
+        nav = ""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -787,15 +853,26 @@ def write_stack_visualization(
     output_path: str | Path,
     *,
     companion_summary_path: Path | None = None,
+    companion_distributed_path: Path | None = None,
 ) -> None:
     rp = Path(report_path)
     with rp.open(encoding="utf-8") as f:
         report = cast(dict[str, Any], json.load(f))
     op = Path(output_path)
-    sum_href: str | None = None
-    if companion_summary_path is not None:
-        sum_href = relative_viz_href(from_html=op, to_html=Path(companion_summary_path))
-    html_out = build_stack_html(report, companion_summary_href=sum_href)
+    nav = build_viz_sibling_nav_html(
+        current_html=op,
+        stack_output=op,
+        summary_output=(
+            Path(companion_summary_path) if companion_summary_path is not None else None
+        ),
+        distributed_output=(
+            Path(companion_distributed_path)
+            if companion_distributed_path is not None
+            else None
+        ),
+        current="stack",
+    )
+    html_out = build_stack_html(report, viz_nav_html=nav)
     op.parent.mkdir(parents=True, exist_ok=True)
     with op.open("w", encoding="utf-8") as f:
         f.write(html_out)

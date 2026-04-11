@@ -10,7 +10,7 @@ FORMATS := all
 COMPOSE_KAFKA := docker/docker-compose.kafka.yml
 KAFKA_ENV := KSP_KAFKA_BOOTSTRAP=127.0.0.1:19092 KSP_KAFKA_BROKER_LABEL=apache_kafka_kraft
 
-.PHONY: install lint test test-kafka report
+.PHONY: install lint test test-ci test-kafka report
 
 $(PY):
 	python3 -m venv $(VENV)
@@ -23,6 +23,31 @@ lint: $(PY)
 	$(PY) -m ruff check src tests
 	$(PY) -m black --check src tests
 	$(PY) -m mypy src
+
+# Deterministic CI: pytest excluding @pytest.mark.kafka, then the same ksp-bench
+# tier smokes as `make test` (no Docker / no broker).
+test-ci: $(PY)
+	$(PY) -m pytest -q -m "not kafka"
+	$(VENV)/bin/ksp-bench run --scenario $(SCENARIOS) --tier S0 --formats $(FORMATS) --compression zstd --warmup 2 --iterations 5 --output-dir /tmp/ksp-s0-zstd
+	test -f /tmp/ksp-s0-zstd/report.json
+	$(VENV)/bin/ksp-bench run --scenario $(SCENARIOS) --tier S0 --formats $(FORMATS) --compression gzip --warmup 2 --iterations 5 --output-dir /tmp/ksp-s0-gzip
+	test -f /tmp/ksp-s0-gzip/report.json
+	$(VENV)/bin/ksp-bench run --scenario $(SCENARIOS) --tier S1 --compression zstd --formats $(FORMATS) --warmup 1 --iterations 3 --output-dir /tmp/ksp-s1-zstd
+	test -f /tmp/ksp-s1-zstd/report.json
+	$(VENV)/bin/ksp-bench run --scenario $(SCENARIOS) --tier S1 --compression gzip --formats $(FORMATS) --warmup 1 --iterations 3 --output-dir /tmp/ksp-s1-gzip
+	test -f /tmp/ksp-s1-gzip/report.json
+	$(VENV)/bin/ksp-bench run --scenario $(SCENARIOS) --tier S2 --compression zstd --formats $(FORMATS) --warmup 1 --iterations 3 --output-dir /tmp/ksp-s2-zstd
+	test -f /tmp/ksp-s2-zstd/report.json
+	$(VENV)/bin/ksp-bench run --scenario $(SCENARIOS) --tier S2 --compression gzip --formats $(FORMATS) --warmup 1 --iterations 3 --output-dir /tmp/ksp-s2-gzip
+	test -f /tmp/ksp-s2-gzip/report.json
+	$(VENV)/bin/ksp-bench run --scenario $(SCENARIOS) --tier S3 --compression zstd --formats $(FORMATS) --batch-size 8 --warmup 1 --iterations 2 --output-dir /tmp/ksp-s3-zstd
+	test -f /tmp/ksp-s3-zstd/report.json
+	$(VENV)/bin/ksp-bench run --scenario $(SCENARIOS) --tier S3 --compression gzip --formats $(FORMATS) --batch-size 8 --warmup 1 --iterations 2 --output-dir /tmp/ksp-s3-gzip
+	test -f /tmp/ksp-s3-gzip/report.json
+	$(VENV)/bin/ksp-bench run --scenario $(SCENARIOS) --tier S4 --compression zstd --formats $(FORMATS) --batch-size 8 --warmup 1 --iterations 2 --output-dir /tmp/ksp-s4-zstd
+	test -f /tmp/ksp-s4-zstd/report.json
+	$(VENV)/bin/ksp-bench run --scenario $(SCENARIOS) --tier S4 --compression gzip --formats $(FORMATS) --batch-size 8 --warmup 1 --iterations 2 --output-dir /tmp/ksp-s4-gzip
+	test -f /tmp/ksp-s4-gzip/report.json
 
 # Full pytest (in-process + @pytest.mark.distributed + Kafka E2E) then CLI matrix.
 # Requires Docker (Apache Kafka KRaft: docker/docker-compose.kafka.yml).
@@ -67,4 +92,5 @@ report: test
 	test -f reports/make-report/report.json
 	$(VENV)/bin/ksp-bench viz reports/make-report/report.json -o reports/make-report/stack.html
 	test -f reports/make-report/summary.html
-	@echo "Wrote reports/make-report/report.json report.md stack.html summary.html"
+	test -f reports/make-report/distributed.html
+	@echo "Wrote reports/make-report/report.json report.md stack.html summary.html distributed.html"
