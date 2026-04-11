@@ -276,20 +276,24 @@ def test_build_stack_html_full_matrix_sections() -> None:
     assert "avro, protobuf, json" in html
 
 
-@pytest.mark.parametrize(
-    ("tier", "needle"),
-    [
-        ("S0", "Encode (timed window)"),
-        ("S1", "S1 timed wire"),
-        ("S2", "S2: registry GET (new TCP each)"),
-        ("S3", "S3: producer batch"),
-        ("S4", "S4: consumer batch decode"),
-    ],
-)
-def test_build_stack_html_from_build_report_each_tier(tier: str, needle: str) -> None:
-    comp: CompressionAlg = (
-        cast(CompressionAlg, "gzip") if tier == "S1" else cast(CompressionAlg, "zstd")
-    )
+_TIER_VIZ_NEEDLES: dict[str, str] = {
+    "S0": "Encode (timed window)",
+    "S1": "S1 timed wire",
+    "S2": "S2: registry GET (new TCP each)",
+    "S3": "S3: producer batch",
+    "S4": "S4: consumer batch decode",
+}
+
+
+@pytest.mark.parametrize("tier", ["S0", "S1", "S2", "S3", "S4"])
+@pytest.mark.parametrize("compression", ["gzip", "zstd"])
+def test_build_stack_html_from_build_report_each_tier_and_compression(
+    tier: str,
+    compression: str,
+) -> None:
+    """Real report for every tier × scenario compression (smoke JSON row)."""
+
+    comp = cast(CompressionAlg, compression)
     report = build_report(
         profiles=[PayloadProfile.small],
         tier=cast(ScenarioTier, tier),
@@ -303,9 +307,29 @@ def test_build_stack_html_from_build_report_each_tier(tier: str, needle: str) ->
         batch_size=4,
     )
     html = build_stack_html(report)
-    assert needle in html
+    assert _TIER_VIZ_NEEDLES[tier] in html
     assert f'id="tierpanel-{tier.lower()}"' in html
     assert "What do benchmark tiers mean?" in html
+    assert f"<strong>Compression (scenario / S1 timed):</strong> {compression}" in html
+
+
+def test_build_stack_html_from_build_report_full_matrix_avro_protobuf_json() -> None:
+    """Viz over a full profile × format matrix (single tier / compression)."""
+
+    report = build_report(
+        profiles=list(PayloadProfile),
+        tier="S0",
+        formats=["avro", "protobuf", "json"],
+        compression=cast(CompressionAlg, "gzip"),
+        warmup=0,
+        iterations=1,
+        seed=19,
+        rubric_governance=None,
+        rubric_maintainability=None,
+    )
+    html = build_stack_html(report)
+    assert html.count('<section class="result">') == 12
+    assert "avro, protobuf, json" in html
 
 
 def test_write_stack_visualization_roundtrip(tmp_path: Path) -> None:

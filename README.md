@@ -85,7 +85,7 @@ make test      # pytest + CLI smoke (same as CI)
 make report    # same as make test, then full-profile S0 benchmark + stack.html → reports/make-report/
 ```
 
-`make test` runs **`ksp-bench`** with **`--formats all`**: **S0** uses all payload profiles (`small`–`evolution`), **S1** runs twice (**`zstd`** and **`gzip`**), and **S2**–**S4** use short **`json`** smokes. Outputs land under `/tmp/ksp-report`, `/tmp/ksp-s1-zstd`, `/tmp/ksp-s1-gzip`, `/tmp/ksp-s2`, `/tmp/ksp-s3`, and `/tmp/ksp-s4`.
+`make test` runs **`pytest`** then **`ksp-bench`** for **every tier (S0–S4)** with **`--scenario small,medium,large,evolution`**, **`--formats all`**, and **both** **`--compression zstd`** and **`--compression gzip`** (separate `/tmp/ksp-{tier}-{alg}/report.json` each). **S3/S4** passes **`--batch-size 8`**.
 
 To use another Python for creating the venv, run `python3.12 -m venv .venv` yourself, then `make install` (the existing `.venv` is reused).
 
