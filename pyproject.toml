@@ -73,3 +73,6 @@ ignore_errors = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "distributed: large-payload / batch-style scenarios (wire, S1, S3, S4)",
+]
