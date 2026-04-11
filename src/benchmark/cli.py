@@ -267,10 +267,28 @@ def viz_cmd(
         "-o",
         help="Self-contained HTML (stack flow + mean-time bars)",
     ),
+    summary: bool = typer.Option(
+        True,
+        "--summary/--no-summary",
+        help=(
+            "Also write conclusions HTML next to --output "
+            "(unless --summary-output is set)."
+        ),
+    ),
+    summary_output: Path | None = typer.Option(
+        None,
+        "--summary-output",
+        help="Path for conclusions HTML (default: <output-dir>/summary.html).",
+    ),
 ) -> None:
     """Encode→wire→decode stack diagram plus bar chart of mean times per component."""
 
     from benchmark.viz.stack_html import write_stack_visualization
+    from benchmark.viz.summary_html import write_summary_visualization
 
     write_stack_visualization(report_json, output)
     typer.echo(f"Wrote {output}")
+    if summary:
+        sum_path = summary_output or (output.parent / "summary.html")
+        write_summary_visualization(report_json, sum_path)
+        typer.echo(f"Wrote {sum_path}")

@@ -102,6 +102,7 @@ def test_build_stack_html_includes_encode_decode_bars() -> None:
     assert "Phase-3 size probes" in html
     assert "gzip</strong> 120" in html
     assert "zstd</strong> 110" in html
+    assert "Width scale is shared" in html
 
 
 def test_build_stack_html_s2_registry_bars() -> None:

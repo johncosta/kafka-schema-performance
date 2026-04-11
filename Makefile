@@ -49,4 +49,5 @@ report: test
 	$(VENV)/bin/ksp-bench run --scenario $(SCENARIOS) --tier all --formats $(FORMATS) --compression zstd --warmup 3 --iterations 15 --batch-size 8 --output-dir reports/make-report
 	test -f reports/make-report/report.json
 	$(VENV)/bin/ksp-bench viz reports/make-report/report.json -o reports/make-report/stack.html
-	@echo "Wrote reports/make-report/report.json report.md stack.html"
+	test -f reports/make-report/summary.html
+	@echo "Wrote reports/make-report/report.json report.md stack.html summary.html"

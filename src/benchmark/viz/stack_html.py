@@ -131,6 +131,20 @@ def _max_bar(bars: list[tuple[str, float, str]]) -> float:
     return max(vals) if vals else 1.0
 
 
+def _bar_scale_maxima(rows: list[dict[str, Any]]) -> dict[str, float]:
+    """Per bar-label max mean_s across the whole report (shared width scale)."""
+
+    out: dict[str, float] = {}
+    for row in rows:
+        for label, mean_s, _ in _bars_for_row(row):
+            if not (mean_s == mean_s) or mean_s <= 0:
+                continue
+            prev = out.get(label, 0.0)
+            if mean_s > prev:
+                out[label] = mean_s
+    return out
+
+
 def _phase3_probe_sizes(row: dict[str, Any]) -> tuple[int | None, int | None]:
     """Return (gzip_bytes, zstd_bytes) from Phase-3 wire-size probes, if present."""
 
@@ -146,7 +160,12 @@ def _phase3_probe_sizes(row: dict[str, Any]) -> tuple[int | None, int | None]:
     return gi, zi
 
 
-def _row_section(row: dict[str, Any], *, profile_in_heading: bool = True) -> str:
+def _row_section(
+    row: dict[str, Any],
+    *,
+    profile_in_heading: bool = True,
+    bar_scale_maxima: dict[str, float] | None = None,
+) -> str:
     profile = html.escape(str(row.get("payload_profile", "?")))
     codec = html.escape(str(row.get("codec", "?")))
     tier = html.escape(str(row.get("tier", "?")))
@@ -176,13 +195,18 @@ def _row_section(row: dict[str, Any], *, profile_in_heading: bool = True) -> str
             )
 
     bars = _bars_for_row(row)
-    mx = _max_bar(bars)
+    row_mx = _max_bar(bars)
 
     bar_html: list[str] = []
     for label, mean_s, color in bars:
         if not (mean_s == mean_s) or mean_s < 0:
             continue
-        pct = min(100.0, 100.0 * mean_s / mx) if mx > 0 else 0.0
+        if bar_scale_maxima:
+            gmx = bar_scale_maxima.get(label, 0.0)
+            denom = gmx if gmx > 0 else row_mx
+        else:
+            denom = row_mx
+        pct = min(100.0, 100.0 * mean_s / denom) if denom > 0 else 0.0
         lbl = html.escape(label)
         bar_html.append(
             f'<div class="bar-row"><div class="bar-label">{lbl}</div>'
@@ -203,10 +227,13 @@ def _row_section(row: dict[str, Any], *, profile_in_heading: bool = True) -> str
 
     note = (
         '<p class="fineprint">Bars use <strong>mean wall time</strong> per iteration '
-        "from <code>report.json</code>. Round-trip is one timer around encode "
-        "(+ tier extras) and decode—it is <em>not</em> the sum of the encode and "
-        "decode bars. See <code>measurement</code> in the report for tier-specific "
-        "definitions.</p>"
+        "from <code>report.json</code>. "
+        "<strong>Width scale is shared</strong> for each bar type across <em>all</em> "
+        "result rows in this file (same label = same max), so longer bars are slower "
+        "than shorter ones when comparing codecs or profiles. Round-trip is one timer "
+        "around encode (+ tier extras) and decode—it is <em>not</em> the sum of the "
+        "encode and decode bars. See <code>measurement</code> in the report for "
+        "tier-specific definitions.</p>"
     )
 
     title = (
@@ -308,6 +335,7 @@ def _scenario_tabs_html(
     groups: dict[str, list[dict[str, Any]]],
     *,
     id_prefix: str,
+    bar_scale_maxima: dict[str, float] | None,
 ) -> str:
     if not profile_order:
         return "<p>No results in report.</p>"
@@ -331,7 +359,12 @@ def _scenario_tabs_html(
             f'data-tab-target="{html.escape(panel_id)}">{label}</button>',
         )
         inner = "\n".join(
-            _row_section(r, profile_in_heading=False) for r in groups.get(prof, [])
+            _row_section(
+                r,
+                profile_in_heading=False,
+                bar_scale_maxima=bar_scale_maxima,
+            )
+            for r in groups.get(prof, [])
         )
         if not inner.strip():
             inner = "<p>No rows for this profile.</p>"
@@ -359,6 +392,7 @@ def _tier_panel_inner(
     scenario_profiles: list[Any],
     *,
     scenario_tier: str,
+    bar_scale_maxima: dict[str, float] | None,
 ) -> str:
     desc = TIER_DESCRIPTIONS.get(
         tier,
@@ -383,7 +417,12 @@ def _tier_panel_inner(
         order = list(groups.keys())
     ts = _tier_slug(tier)
     prefix = f"prof-{ts}-"
-    scenarios = _scenario_tabs_html(order, groups, id_prefix=prefix)
+    scenarios = _scenario_tabs_html(
+        order,
+        groups,
+        id_prefix=prefix,
+        bar_scale_maxima=bar_scale_maxima,
+    )
     return f"{head}{scenarios}"
 
 
@@ -394,6 +433,7 @@ def _tier_top_tabs_html(
     *,
     default_tier: str,
     scenario_tier: str,
+    bar_scale_maxima: dict[str, float] | None,
 ) -> str:
     tab_buttons: list[str] = []
     tier_panels: list[str] = []
@@ -418,6 +458,7 @@ def _tier_top_tabs_html(
             tier_to_rows.get(tier, []),
             scenario_profiles,
             scenario_tier=scenario_tier,
+            bar_scale_maxima=bar_scale_maxima,
         )
         tier_panels.append(
             f'<div class="{panel_class}" role="tabpanel" '
@@ -524,6 +565,7 @@ def build_stack_html(report: dict[str, Any]) -> str:
     scenario_tier = str(scen.get("tier", "") or "")
     tier_groups = _group_rows_by_tier(rows, scenario_tier=scenario_tier)
     default_tab = _pick_default_tier_tab(scenario_tier, tier_groups)
+    bar_scale_maxima = _bar_scale_maxima(rows) if rows else {}
     if rows:
         body = (
             _tier_glossary_html()
@@ -537,6 +579,7 @@ def build_stack_html(report: dict[str, Any]) -> str:
                 scen_profiles,
                 default_tier=default_tab,
                 scenario_tier=scenario_tier or "?",
+                bar_scale_maxima=bar_scale_maxima,
             )
         )
     else:
