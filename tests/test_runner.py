@@ -39,7 +39,7 @@ def test_bench_codec_smoke_s0() -> None:
 
 
 def test_s0_report_rows_expose_distinct_encode_decode_timings() -> None:
-    """PRD §6.6.1: S0 exposes encode-only and decode-only means (not round-trip alone)."""
+    """PRD §6.6.1: S0 rows expose encode-only and decode-only means."""
 
     report = build_report(
         profiles=[PayloadProfile.small],

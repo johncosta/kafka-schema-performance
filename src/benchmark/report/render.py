@@ -26,6 +26,23 @@ def append_phase8_sections(lines: list[str], report: dict[str, Any]) -> None:
         if pol:
             lines.append(f"**Interpretation:** {pol}")
             lines.append("")
+        cov = lim.get("evidence_coverage")
+        if isinstance(cov, dict):
+            lines.extend(["### Evidence coverage (PRD §6.6)", ""])
+            cs = cov.get("summary")
+            if cs:
+                lines.append(str(cs))
+                lines.append("")
+            nm = cov.get("not_measured")
+            if isinstance(nm, list) and nm:
+                lines.append("**Not measured (do not infer from this report alone):**")
+                for item in nm:
+                    lines.append(f"- {item}")
+                lines.append("")
+            tc = cov.get("test_and_ci")
+            if tc:
+                lines.append(f"**Tests / CI:** {tc}")
+                lines.append("")
 
     art = report.get("artifact_integrity")
     if isinstance(art, dict):

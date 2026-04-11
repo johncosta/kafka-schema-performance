@@ -171,6 +171,23 @@ def _min_value_winners(scores: dict[str, float]) -> list[str]:
     return [c for c, v in scores.items() if v == best]
 
 
+def group_rows_for_win_rate(
+    rows: list[dict[str, Any]],
+) -> dict[tuple[str, str], list[dict[str, Any]]]:
+    """Partition ``results`` rows by ``(tier, payload_profile)`` for win-rate math."""
+
+    return _group_rows(rows)
+
+
+def aggregate_codec_win_rates(
+    groups: dict[tuple[str, str], list[dict[str, Any]]],
+    all_rows: list[dict[str, Any]],
+) -> tuple[int, dict[str, float], list[str]]:
+    """Public entrypoint for win-rate aggregation (PRD §6.6.7 tests, viz parity)."""
+
+    return _aggregate_codec_win_rates(groups, all_rows)
+
+
 def _aggregate_codec_win_rates(
     groups: dict[tuple[str, str], list[dict[str, Any]]],
     all_rows: list[dict[str, Any]],
@@ -436,6 +453,19 @@ def _limitations_block(report: dict[str, Any]) -> str:
                 lis.append(f"<li>{html.escape(p.strip())}</li>")
         if lis:
             parts.append(f"<ul>{''.join(lis)}</ul>")
+    cov = lim.get("evidence_coverage")
+    if isinstance(cov, dict):
+        nm = cov.get("not_measured")
+        if isinstance(nm, list) and nm:
+            ev_lis = []
+            for x in nm[:8]:
+                if isinstance(x, str) and x.strip():
+                    ev_lis.append(f"<li>{html.escape(x.strip())}</li>")
+            if ev_lis:
+                parts.append(
+                    "<p><strong>PRD §6.6 — not measured here:</strong></p>"
+                    f"<ul>{''.join(ev_lis)}</ul>"
+                )
     if not parts:
         return ""
     return (
@@ -455,11 +485,13 @@ _TEST_SUITE_AI_HANDOFF_LINES: tuple[str, ...] = (
     "",
     "## How to run",
     "- `pytest` — full tree under tests/; fast by default.",
+    '- `make test-ci` — CI default: pytest -m "not kafka" + ksp-bench S0–S4 smokes '
+    "(no Docker).",
     "- `@pytest.mark.kafka` — skipped unless KSP_KAFKA_BOOTSTRAP=host:port "
     "(e.g. Docker Compose Kafka KRaft) or KSP_USE_TESTCONTAINERS=1 with .[kafka].",
     "- `pytest -m distributed` — only tests marked @pytest.mark.distributed.",
     "- `pytest -m kafka` — only broker integration tests.",
-    "- `make test` — compose Kafka, full pytest, then ksp-bench CLI smokes.",
+    "- `make test` — compose Kafka, full pytest + kafka, then ksp-bench smokes.",
     "",
     "## Pytest markers (pyproject.toml)",
     "- distributed — in-process S0/S1 footprint vs. binary codecs "
@@ -470,16 +502,19 @@ _TEST_SUITE_AI_HANDOFF_LINES: tuple[str, ...] = (
     "## tests/ — in-process (no broker required)",
     "- test_cli_parse.py — CLI argument parsing / typer wiring.",
     "- test_codecs.py — Avro / Protobuf / JSON encode-decode round-trips.",
+    "- test_codecs_negative_decode.py — invalid wire / JSON; expected failures.",
     "- test_distributed_performance.py — @pytest.mark.distributed: large/medium "
     "S0 wire JSON > binary; large S1 compressed JSON > binary.",
     "- test_env_integrity.py — fixture / environment checksum behavior.",
     "- test_generators.py — synthetic payload generator invariants.",
+    "- test_golden_report_win_rate.py — examples/reports golden JSON; win-rate math.",
     "- test_registry_mock.py — tier S2 mock schema registry HTTP path.",
     "- test_report_render.py — Markdown report rendering from JSON.",
     "- test_regression.py — baseline fingerprint and regression_warn_ratio hints.",
     "- test_rubrics.py — governance / maintainability YAML merge into report.",
     "- test_runner.py — bench_codec matrix, tiers S0–S4 shape, kafka_shaped sizes.",
     "- test_stats.py — timing stats helpers.",
+    "- test_metrics_stats_canned.py — fixed-sample percentiles; gzip/zstd helpers.",
     "- test_viz_distributed_html.py — distributed.html from report rows.",
     "- test_viz_stack_html.py — stack tier tabs, bars, glossary HTML.",
     "- test_viz_summary_html.py — summary tables, win-rate, kafka_e2e HTML block.",

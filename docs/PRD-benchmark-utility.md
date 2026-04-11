@@ -270,9 +270,9 @@ Provide a **narrow in-process** suite with deterministic inputs, **canned timing
 3. Where supported by the harness, reports include **fine-grained serialize/decode/validation** breakdown (Section 6.1.1) or a documented reason (e.g. runtime limits).
 4. Governance and maintainability sections use a **published rubric** with explicit weights.
 5. Documentation states **limitations** (single-node CPU, which stack layers are real vs simulated, no cross-region latency unless run says otherwise).
-6. **Roadmapped:** Automated tests cover **encode-only** and **decode-only** for at least one canonical fixture per applicable tier, or the report footer explicitly lists this gap with a tracked ID (Section 6.6.1).
-7. **Roadmapped:** At least one **golden** `report.json` (and associated viz assertions) validates win-rate or ranking **semantics**, not only rendered strings (Section 6.6.7).
-8. **Roadmapped:** CI path **without Docker** runs a deterministic in-process suite per Section 6.6.8; broker tests remain opt-in or scheduled where appropriate.
+6. **In repo:** `tests/test_runner.py` asserts distinct **encode** and **decode** means on S0 rows; `tests/test_metrics_stats_canned.py` pins **percentile math** on fixed samples; `tests/test_codecs_negative_decode.py` covers **expected-failure** decodes (Section 6.6.1). Further isolation (compress-only fractions, canned wall-clock aggregates) remains incremental backlog.
+7. **In repo:** `examples/reports/golden_two_codecs.report.json` plus `tests/test_golden_report_win_rate.py` and **`aggregate_codec_win_rates`** in `benchmark.viz.summary_html` validate **win-rate math** and summary HTML for that fixture (Section 6.6.7).
+8. **In repo:** **`make test-ci`** (pytest `-m "not kafka"` + `ksp-bench` S0–S4 smokes) is the **default CI** path without Docker; **`make test`** runs Kafka E2E when Docker is available (Section 6.6.8).
 
 ---
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from benchmark.report.limitations import limitations_for_report
 from benchmark.viz.summary_html import build_summary_html, write_summary_visualization
 
 
@@ -155,6 +156,25 @@ def test_build_summary_html_highlights_best_encode_column() -> None:
     }
     html = build_summary_html(report)
     assert 'class="best"' in html
+
+
+def test_build_summary_html_limitations_include_evidence_gaps() -> None:
+    report = {
+        "report_version": 8,
+        "scenario": {
+            "tier": "S0",
+            "payload_profiles": ["small"],
+            "formats": ["json"],
+            "compression": "zstd",
+            "timed_iterations": 3,
+        },
+        "results": [
+            _row(tier="S0", profile="small", codec="json", enc=1e-6, dec=1e-6, rt=1e-6),
+        ],
+        "limitations": limitations_for_report(),
+    }
+    html = build_summary_html(report)
+    assert "not measured here" in html.lower()
 
 
 def test_build_summary_html_regression_and_limitations() -> None:

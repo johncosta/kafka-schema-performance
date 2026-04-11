@@ -2,7 +2,7 @@
 
 **Status:** Draft  
 **References:** [PRD-benchmark-utility.md](./PRD-benchmark-utility.md)  
-**Last updated:** 2026-04-07  
+**Last updated:** 2026-04-11  
 
 This document turns the PRD into a **phased delivery plan**: repository shape, core abstractions, scenario tiers (S0–S4), reporting, and exit criteria per milestone. It is the working substitute for a full TDD until low-level design choices are locked.
 
@@ -25,9 +25,9 @@ This document turns the PRD into a **phased delivery plan**: repository shape, c
 |----------|--------|
 | **Harness language** | **Python 3.11+** — package `benchmark` under `src/`, CLI **`ksp-bench`** (Typer) |
 | **Libraries** | **fastavro**, **protobuf** (generated `event_pb2`), **orjson**, **zstandard** / **gzip** for tier S1 |
-| **MVP scenario tiers** | **S0** (codec in-process) and **S1** (encode → compress → decompress → decode); **S2–S4** not implemented yet |
-| **Registry** | Not wired; **rubrics** YAML attached to reports for governance / maintainability metadata |
-| **Kafka in CI** | **None** (no producer/consumer path in default CI) |
+| **MVP scenario tiers** | **S0–S4** implemented (`--tier all` merges into one report); **S2** = loopback mock registry; **S3/S4** = in-memory batch paths (no real Kafka client in timed path) |
+| **Registry** | **S2** mock HTTP only for timed fetches; **rubrics** YAML attached to reports |
+| **Kafka in CI** | **Default GitHub Actions:** `make test-ci` (pytest `-m "not kafka"` + CLI smokes, no Docker). **Full broker E2E:** `make test` / `make test-kafka` locally or in a job that provides Docker + `KSP_KAFKA_BOOTSTRAP` |
 | **Stats** | `time.perf_counter` samples; **p50/p90/p99**, mean, records/s, MB/s |
 
 Fork / alternate stacks: use the same scenario labels; pin library versions in each report’s **environment** block.
@@ -238,10 +238,10 @@ Versioned JSON schema or Pydantic models for:
 
 ## 9. Next actions (checklist)
 
-- [ ] Approve harness language and MVP tier scope (§2).  
-- [ ] Create Phase 0 scaffold PR (branch from `main`).  
-- [ ] Add `CONTRIBUTING.md` snippet: how to add a new payload profile.  
-- [ ] After Phase 2: sample public report checked into `examples/` (redacted env) for review demos.  
+- [x] Approve harness language and MVP tier scope (§2).  
+- [x] Create Phase 0 scaffold PR (branch from `main`).  
+- [x] Add `CONTRIBUTING.md`: how to add a new payload profile; Makefile targets.  
+- [x] Sample hand-checked `report.json` under `examples/reports/` for viz / win-rate semantics (no environment block).  
 
 ---
 

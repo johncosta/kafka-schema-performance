@@ -26,5 +26,5 @@ jobs:
       - name: Lint
         run: make lint
 
-      - name: Test
-        run: make test
+      - name: Test (no Docker; PRD §6.6.8)
+        run: make test-ci

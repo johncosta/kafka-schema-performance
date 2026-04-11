@@ -4,6 +4,28 @@ from typing import Any
 
 LIMITATIONS: dict[str, Any] = {
     "summary": "Micro-benchmark caveats when interpreting this report.",
+    "evidence_coverage": {
+        "summary": (
+            "PRD §6.6 scope: metrics below are intentionally labeled as not produced "
+            "by this harness so reports are not read as covering them."
+        ),
+        "not_measured": [
+            "Consumer lag, broker replication, and cross-region latency.",
+            "TLS, SASL, or HTTP authentication on schema registry or Kafka clients.",
+            "Multi-broker clusters, partitions, or idempotent producer settings.",
+            "Decode success rates or latency under adversarial or corrupted payloads.",
+            "Strict statistical confidence intervals or cross-machine reproducibility.",
+            (
+                "Throughput under sustained parallel producer workers "
+                "(see threading model)."
+            ),
+        ],
+        "test_and_ci": (
+            "Deterministic pytest (excluding @pytest.mark.kafka) and optional "
+            "Kafka E2E when KSP_KAFKA_BOOTSTRAP is set; see Makefile targets "
+            "`test-ci` vs `test`."
+        ),
+    },
     "points": [
         "Wall-clock timings on a single process/OS; CPU frequency scaling, thermal "
         "throttling, and background load change run-to-run variance.",
