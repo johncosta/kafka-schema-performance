@@ -243,3 +243,26 @@ def run_cmd(
     typer.echo(f"Wrote {json_path}")
     if md_path:
         typer.echo(f"Wrote {md_path}")
+
+
+@app.command("viz")
+def viz_cmd(
+    report_json: Path = typer.Argument(
+        ...,
+        exists=True,
+        readable=True,
+        help="report.json from ksp-bench run",
+    ),
+    output: Path = typer.Option(
+        Path("stack.html"),
+        "--output",
+        "-o",
+        help="Self-contained HTML (stack flow + mean-time bars)",
+    ),
+) -> None:
+    """Encode→wire→decode stack diagram plus bar chart of mean times per component."""
+
+    from benchmark.viz.stack_html import write_stack_visualization
+
+    write_stack_visualization(report_json, output)
+    typer.echo(f"Wrote {output}")
