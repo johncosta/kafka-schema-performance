@@ -92,7 +92,7 @@ def test_build_report_multi_profile_matrix() -> None:
         rubric_governance=None,
         rubric_maintainability=None,
     )
-    assert report["report_version"] == 7
+    assert report["report_version"] == 8
     assert "limitations" in report
     assert report["limitations"]["summary"]
     assert "artifact_integrity" in report
@@ -120,7 +120,7 @@ def test_build_report_s2_includes_registry_stats() -> None:
         rubric_governance=None,
         rubric_maintainability=None,
     )
-    assert report["report_version"] == 7
+    assert report["report_version"] == 8
     assert report["scenario"]["tier"] == "S2"
     assert "s2" in report["scenario"]
     row = report["results"][0]
@@ -128,6 +128,62 @@ def test_build_report_s2_includes_registry_stats() -> None:
     s2 = row["s2_registry"]
     assert s2["fetch_new_tcp_each_iteration"]["mean_s"] >= 0
     assert s2["fetch_reused_connection"]["mean_s"] >= 0
+
+
+def test_build_report_s3_producer_batch() -> None:
+    report = build_report(
+        profiles=[PayloadProfile.small],
+        tier="S3",
+        formats=["json"],
+        compression="zstd",
+        warmup=0,
+        iterations=2,
+        seed=2,
+        rubric_governance=None,
+        rubric_maintainability=None,
+        batch_size=4,
+    )
+    assert report["scenario"]["batch_size"] == 4
+    assert report["scenario"]["s3_s4"]["batch_size"] == 4
+    row = report["results"][0]
+    assert row["tier"] == "S3"
+    bb = row["s3_producer_batch"]["batch_build_and_join"]
+    assert bb["mean_s"] >= 0
+    assert row["s3_producer_batch"]["batch_size"] == 4
+
+
+def test_build_report_s4_consumer_batch() -> None:
+    report = build_report(
+        profiles=[PayloadProfile.small],
+        tier="S4",
+        formats=["json"],
+        compression="zstd",
+        warmup=0,
+        iterations=2,
+        seed=3,
+        rubric_governance=None,
+        rubric_maintainability=None,
+        batch_size=4,
+    )
+    assert report["scenario"]["batch_size"] == 4
+    row = report["results"][0]
+    assert row["tier"] == "S4"
+    bd = row["s4_consumer_batch"]["batch_decode"]
+    assert bd["mean_s"] >= 0
+
+
+def test_bench_codec_s3_smoke() -> None:
+    r = bench_codec(
+        JsonCodec(),
+        golden_small_event(),
+        tier="S3",
+        compression="zstd",
+        warmup=1,
+        iterations=2,
+        batch_size=3,
+    )
+    assert r["tier"] == "S3"
+    assert r["s3_producer_batch"]["batch_size"] == 3
 
 
 def test_build_report_s1_scenario_block() -> None:

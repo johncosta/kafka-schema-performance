@@ -128,6 +128,9 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- **Seed:** {scen['seed']}",
         "",
     ]
+    if scen.get("batch_size") is not None:
+        lines.append(f"- **Batch size:** {scen['batch_size']}")
+        lines.append("")
     s1_scen = scen.get("s1")
     if scen.get("tier") == "S1" and isinstance(s1_scen, dict):
         lines.extend(
@@ -162,6 +165,30 @@ def render_markdown(report: dict[str, Any]) -> str:
                 "",
                 "*Cold vs warm fetch timings appear per codec row "
                 "under **S2 registry**.*",
+                "",
+            ]
+        )
+    s34 = scen.get("s3_s4")
+    t34 = scen.get("tier")
+    if t34 == "S3" and isinstance(s34, dict):
+        lines.extend(
+            [
+                "### Tier S3 (memory producer batch)",
+                "",
+                f"- **Batch size:** {s34.get('batch_size')}",
+                f"- **Implementation:** {s34.get('implementation')}",
+                f"- **Note:** {s34.get('note', '')}",
+                "",
+            ]
+        )
+    if t34 == "S4" and isinstance(s34, dict):
+        lines.extend(
+            [
+                "### Tier S4 (memory consumer batch)",
+                "",
+                f"- **Batch size:** {s34.get('batch_size')}",
+                f"- **Implementation:** {s34.get('implementation')}",
+                f"- **Note:** {s34.get('note', '')}",
                 "",
             ]
         )
@@ -208,6 +235,12 @@ def render_markdown(report: dict[str, Any]) -> str:
             lines.append("**S2 (registry):**")
             lines.append("")
             lines.append(tier_s2)
+            lines.append("")
+        tier_s34 = meas.get("tier_s3_s4_memory")
+        if isinstance(tier_s34, str) and tier_s34:
+            lines.append("**S3/S4 (memory queue):**")
+            lines.append("")
+            lines.append(tier_s34)
             lines.append("")
     lines.extend(
         [
@@ -294,6 +327,55 @@ def render_markdown(report: dict[str, Any]) -> str:
                     f"{_fmt_mb_s(rt['round_trip_compressed_wire_mb_per_s'])}",
                 )
                 lines.append("")
+            s3b = row.get("s3_producer_batch")
+            if isinstance(s3b, dict):
+                bb = s3b.get("batch_build_and_join")
+                if isinstance(bb, dict):
+                    m = _fmt_sci(float(bb.get("mean_s", float("nan"))))
+                    rps = s3b.get("effective_records_per_s")
+                    rps_f = (
+                        float(rps) if isinstance(rps, (int, float)) else float("nan")
+                    )
+                    mb3 = _fmt_mb_s(
+                        float(s3b.get("batch_mb_per_s", float("nan"))),
+                    )
+                    lines.extend(
+                        [
+                            "**S3 producer batch (memory, no broker):**",
+                            "",
+                            f"- batch_size: {s3b.get('batch_size')}",
+                            f"- batch mean time: {m} s",
+                            f"- batch MB/s: {mb3}",
+                            f"- effective records/s (batch): {_fmt_intish(rps_f)}",
+                            f"- *{s3b.get('note', '')}*",
+                            "",
+                        ]
+                    )
+            s4b = row.get("s4_consumer_batch")
+            if isinstance(s4b, dict):
+                bd = s4b.get("batch_decode")
+                if isinstance(bd, dict):
+                    m = _fmt_sci(float(bd.get("mean_s", float("nan"))))
+                    rps = s4b.get("effective_records_per_s")
+                    rps_f = (
+                        float(rps) if isinstance(rps, (int, float)) else float("nan")
+                    )
+                    mb4 = _fmt_mb_s(
+                        float(s4b.get("batch_mb_per_s", float("nan"))),
+                    )
+                    lines.extend(
+                        [
+                            "**S4 consumer batch (memory, no broker):**",
+                            "",
+                            f"- batch_size: {s4b.get('batch_size')}",
+                            f"- batch decode mean time: {m} s",
+                            f"- batch MB/s: {mb4}",
+                            f"- effective records/s (batch): {_fmt_intish(rps_f)}",
+                            f"- *Prefetch:* {s4b.get('prefetch_note', '')}",
+                            f"- *{s4b.get('note', '')}*",
+                            "",
+                        ]
+                    )
             s2r = row.get("s2_registry")
             if isinstance(s2r, dict):
                 fc = s2r.get("fetch_new_tcp_each_iteration")

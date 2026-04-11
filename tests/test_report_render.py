@@ -28,6 +28,25 @@ def test_render_markdown_multi_profile_headings() -> None:
     assert "## Artifact integrity" in md
 
 
+def test_render_markdown_s3_tier_section() -> None:
+    report = build_report(
+        profiles=[PayloadProfile.small],
+        tier="S3",
+        formats=["json"],
+        compression="zstd",
+        warmup=0,
+        iterations=1,
+        seed=0,
+        rubric_governance=None,
+        rubric_maintainability=None,
+        batch_size=8,
+    )
+    md = render_markdown(report)
+    assert "### Tier S3 (memory producer batch)" in md
+    assert "S3 producer batch (memory, no broker)" in md
+    assert "**Batch size:** 8" in md
+
+
 def test_render_markdown_s1_tier_section() -> None:
     report = build_report(
         profiles=[PayloadProfile.small],

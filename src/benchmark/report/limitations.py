@@ -11,9 +11,10 @@ LIMITATIONS: dict[str, Any] = {
         "multi-threaded producer pools or async pipelines.",
         "Low timed iteration counts increase statistical noise; raise --iterations "
         "before publishing headline figures.",
-        "Compare S0 vs S1 vs S2 only across runs with matching scenario metadata "
-        "(profiles, seed, formats, tier, compression). S2 uses a loopback mock "
-        "registry; numbers are not comparable to real Schema Registry latency.",
+        "Compare tiers only across runs with matching scenario metadata "
+        "(profiles, seed, formats, tier, compression, batch_size for S3/S4). "
+        "S2 uses a loopback mock registry; S3/S4 use in-memory batches only—"
+        "not real Kafka producer/consumer or broker latency.",
         "Codec deltas on synthetic payloads do not predict every production workload; "
         "treat small gaps as inconclusive without scenario alignment.",
     ],
