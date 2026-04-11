@@ -2,7 +2,7 @@
 
 **Status:** Draft  
 **References:** [PRD-benchmark-utility.md](./PRD-benchmark-utility.md)  
-**Last updated:** 2026-04-11  
+**Last updated:** 2026-04-11 (Phase 9)  
 
 This document turns the PRD into a **phased delivery plan**: repository shape, core abstractions, scenario tiers (S0–S4), reporting, and exit criteria per milestone. It is the working substitute for a full TDD until low-level design choices are locked.
 
@@ -195,6 +195,15 @@ Versioned JSON schema or Pydantic models for:
 **Delivered:** Structured **`limitations`** in JSON and Markdown; **`artifact_integrity`** from sorted **`pip freeze`** plus SHA-256 of joined lines; CLI **`--baseline-report`** and **`--regression-warn-ratio`** with optional **`regression_check`** in JSON (scenario fingerprint must match) and stderr warnings when means exceed baseline × (1 + ratio); Markdown sections **Limitations**, **Artifact integrity**, **Regression check**. **`report_version` 6**.
 
 **Exit:** MVP criterion (5) satisfied in default report template.
+
+### Phase 9 — S1 phase isolation (PRD §6.6.1 follow-on)
+
+- **Compress-only / decompress-only:** additional timed loops on the **fixed** post-warmup raw and compressed wire bytes (same `iterations` count as the main S1 path).
+- **Codec-only slices:** separate loops for **encode-only** and **decode-from-raw-wire** (no decompress) so S1 rows can be compared to combined `encode` / `decode` means.
+- **Report surface:** per-row **`s1_phase_isolation`** with `summarize_times` blocks; **`measurement.tier_s1_phase_isolation`** narrative; Markdown **S1 phase isolation** lines under each S1 row.
+- **Tests:** `bench_codec` S1 smoke asserts isolation keys and `encode.mean_s >= codec_encode_only.mean_s`; exhaustive matrix asserts all four sub-stats have positive means; negative-path tests for invalid UTF-8 JSON and garbage zstd frames.
+
+**Exit:** PRD §6.6.1 “compress-only / decompress-only” satisfied for tier S1 without changing the existing combined S1 timers used for win-rate / viz.
 
 ---
 

@@ -121,5 +121,6 @@ docker compose -f docker/docker-compose.kafka.yml down
 
 ## Scope limits (today)
 
+- **S1** still uses one timed **encode+compress** and **decompress+decode** window for the primary `encode` / `decode` / `round_trip` fields; **`s1_phase_isolation`** adds separate compress-only, decompress-only, and codec-only slices on the same payload for PRD §6.6.1 traceability (see `report.md` / `report.json`).
 - **S2** is an optional **loopback mock** Schema Registry (`--tier S2`), not a live Confluent/Apicurio deployment. **S3/S4** are optional **in-memory** producer/consumer batch paths (`--tier S3`/`S4`, `--batch-size`), not a real Kafka client or broker.
 - Governance and maintainability appear as **YAML rubrics** in reports, not auto-scored from benchmarks.
