@@ -206,7 +206,7 @@ Versioned JSON schema or Pydantic models for:
 | **Codecs** | Golden round-trips; evolution case behavior. |
 | **Stats** | Percentile helper against known tiny sample; monotonicity sanity. |
 | **Report** | Snapshot or schema validation of JSON output; Markdown contains tier labels. |
-| **Visualization** | `ksp-bench viz report.json -o stack.html` — HTML stack flow + mean-time bars from JSON (encode/decode/round-trip; S2/S3/S4 extras when present). **One browser tab per payload profile** (scenario); codecs are stacked inside. Summary lists **tier**, **profiles**, **formats**, **scenario compression** (S1 timed algorithm), and **iterations**. Each row adds **Phase-3 gzip and zstd** probe totals and, for **S1**, **timed compressed wire** bytes. |
+| **Visualization** | `ksp-bench viz report.json -o stack.html` — HTML stack flow + mean-time bars from JSON (encode/decode/round-trip; S2/S3/S4 extras when present). **Tier tabs** (S0–S4) at the top; **profile tabs** inside each tier; collapsible glossary explains tiers. Mixed `results[].tier` values produce multiple tier tabs. Summary lists **scenario tier**, **profiles**, **formats**, **scenario compression**, **iterations**; rows add **Phase-3 gzip/zstd** probes and **S1** timed compressed sizes. |
 | **Benchmarks** | Not run in default CI (noisy); optional scheduled job or `--quick` smoke (few iterations). |
 
 ---

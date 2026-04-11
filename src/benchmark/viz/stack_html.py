@@ -7,6 +7,43 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
+# Display order for top-level tier tabs when a report mixes row tiers.
+TIER_ORDER: tuple[str, ...] = ("S0", "S1", "S2", "S3", "S4")
+
+# Short blurbs for the HTML glossary and per-tier tab panels (keep in sync with README).
+TIER_DESCRIPTIONS: dict[str, str] = {
+    "S0": (
+        "Codec only: timed serialize (domain→bytes) and deserialize (bytes→domain) "
+        "in process. No compression inside timed encode/decode windows, no network, "
+        "no schema registry."
+    ),
+    "S1": (
+        "Codec plus timed compression on the wire: the encode window includes "
+        "compressing raw bytes after serialize; decode includes decompress then "
+        "deserialize. Round-trip is one timer around encode→compress→decompress→decode."
+    ),
+    "S2": (
+        "Codec plus a loopback mock Confluent-style schema registry "
+        "(GET /schemas/ids/{id} on localhost). Includes cold (new TCP each iteration) "
+        "vs warm (HTTP keep-alive) registry fetch timings alongside codec timings."
+    ),
+    "S3": (
+        "Single-record codec timings (same as S0 reference) plus an in-memory "
+        "producer-style batch: encode batch_size records and bytes.join per timed "
+        "iteration—no Kafka producer client or broker."
+    ),
+    "S4": (
+        "Single-record codec timings (same as S0 reference) plus an in-memory "
+        "consumer-style batch: decode batch_size prefetched payloads per timed "
+        "iteration—no Kafka consumer client or broker."
+    ),
+}
+
+
+def _tier_slug(tier: str) -> str:
+    s = "".join(c if c.isalnum() else "-" for c in tier.strip().lower())
+    return s or "tier"
+
 
 def _profile_tab_slug(profile: str) -> str:
     """ASCII id for tab/panel ids (payload_profile values are enum-like)."""
@@ -208,7 +245,7 @@ def _ordered_profile_keys(
 
 
 def _group_rows_by_profile(
-    rows: list[dict[str, Any]]
+    rows: list[dict[str, Any]],
 ) -> dict[str, list[dict[str, Any]]]:
     groups: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
@@ -217,8 +254,53 @@ def _group_rows_by_profile(
     return groups
 
 
+def _group_rows_by_tier(
+    rows: list[dict[str, Any]],
+    *,
+    scenario_tier: str,
+) -> dict[str, list[dict[str, Any]]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    fallback = (scenario_tier or "?").strip() or "?"
+    for row in rows:
+        t = str(row.get("tier") or fallback).strip() or fallback
+        groups.setdefault(t, []).append(row)
+    return groups
+
+
+def _sorted_tier_keys(keys: set[str]) -> list[str]:
+    def _key(t: str) -> tuple[int, str]:
+        try:
+            return (TIER_ORDER.index(t), t)
+        except ValueError:
+            return (len(TIER_ORDER), t)
+
+    return sorted(keys, key=_key)
+
+
+def _tier_glossary_html() -> str:
+    items: list[str] = []
+    for tier in TIER_ORDER:
+        desc = TIER_DESCRIPTIONS.get(tier, "")
+        if not desc:
+            continue
+        items.append(
+            f"<dt><strong>{html.escape(tier)}</strong></dt>"
+            f"<dd>{html.escape(desc)}</dd>",
+        )
+    inner = "".join(items)
+    return (
+        '<details class="tier-glossary">'
+        "<summary>What do benchmark tiers mean?</summary>"
+        f"<dl>{inner}</dl>"
+        "</details>"
+    )
+
+
 def _scenario_tabs_html(
-    profile_order: list[str], groups: dict[str, list[dict[str, Any]]]
+    profile_order: list[str],
+    groups: dict[str, list[dict[str, Any]]],
+    *,
+    id_prefix: str,
 ) -> str:
     if not profile_order:
         return "<p>No results in report.</p>"
@@ -227,8 +309,8 @@ def _scenario_tabs_html(
     panels: list[str] = []
     for i, prof in enumerate(profile_order):
         slug = _profile_tab_slug(prof)
-        tab_id = f"tab-{slug}"
-        panel_id = f"tabpanel-{slug}"
+        tab_id = f"{id_prefix}tab-{slug}"
+        panel_id = f"{id_prefix}panel-{slug}"
         label = html.escape(prof)
         selected = i == 0
         aria_sel = "true" if selected else "false"
@@ -253,62 +335,143 @@ def _scenario_tabs_html(
             f'tabindex="0"{hidden}>{inner}</div>',
         )
 
-    tabs_row = (
-        '<div class="scenario-tabs" data-scenario-tabs>'
-        '<div class="tablist" role="tablist" aria-label="Payload profile (scenario)">'
+    return (
+        '<div class="scenario-tabs" data-tab-group>'
+        '<div class="tablist profile-tablist" role="tablist" '
+        'aria-label="Payload profile (scenario)">'
         f'{"".join(tab_buttons)}'
         "</div>"
         f'{"".join(panels)}'
         "</div>"
     )
-    return tabs_row
+
+
+def _tier_panel_inner(
+    tier: str,
+    tier_rows: list[dict[str, Any]],
+    scenario_profiles: list[Any],
+) -> str:
+    desc = TIER_DESCRIPTIONS.get(
+        tier,
+        f"Tier {tier}: see the measurement block in report.json for definitions.",
+    )
+    desc_html = html.escape(desc)
+    groups = _group_rows_by_profile(tier_rows)
+    order = _ordered_profile_keys(scenario_profiles, tier_rows)
+    if not order and tier_rows:
+        order = list(groups.keys())
+    ts = _tier_slug(tier)
+    prefix = f"prof-{ts}-"
+    scenarios = _scenario_tabs_html(order, groups, id_prefix=prefix)
+    return (
+        f'<p class="tier-desc"><strong>{html.escape(tier)}</strong> — {desc_html}</p>'
+        f"{scenarios}"
+    )
+
+
+def _tier_top_tabs_html(
+    sorted_tiers: list[str],
+    tier_to_rows: dict[str, list[dict[str, Any]]],
+    scenario_profiles: list[Any],
+) -> str:
+    tab_buttons: list[str] = []
+    tier_panels: list[str] = []
+    for i, tier in enumerate(sorted_tiers):
+        slug = _tier_slug(tier)
+        tab_id = f"tiertab-{slug}"
+        panel_id = f"tierpanel-{slug}"
+        label = html.escape(tier)
+        selected = i == 0
+        aria_sel = "true" if selected else "false"
+        tab_class = "tab" + (" tab-active" if selected else "")
+        panel_class = "tab-panel" + (" tab-panel-active" if selected else "")
+        hidden = "" if selected else ' hidden=""'
+        tab_buttons.append(
+            f'<button type="button" class="{tab_class}" role="tab" '
+            f'id="{html.escape(tab_id)}" aria-selected="{aria_sel}" '
+            f'aria-controls="{html.escape(panel_id)}" '
+            f'data-tab-target="{html.escape(panel_id)}">{label}</button>',
+        )
+        inner = _tier_panel_inner(tier, tier_to_rows.get(tier, []), scenario_profiles)
+        tier_panels.append(
+            f'<div class="{panel_class}" role="tabpanel" '
+            f'id="{html.escape(panel_id)}" '
+            f'aria-labelledby="{html.escape(tab_id)}" '
+            f'tabindex="0"{hidden}>{inner}</div>',
+        )
+
+    return (
+        '<div class="tier-top" data-tab-group>'
+        '<div class="tablist tier-tablist" role="tablist" aria-label="Benchmark tier">'
+        f'{"".join(tab_buttons)}'
+        "</div>"
+        f'{"".join(tier_panels)}'
+        "</div>"
+    )
 
 
 _TAB_SWITCH_JS = """
 <script>
 (function () {
-  var root = document.querySelector("[data-scenario-tabs]");
-  if (!root) return;
-  var tabs = root.querySelectorAll("button[data-tab-target]");
-  var panels = root.querySelectorAll("[role=tabpanel]");
-  function activate(panelId) {
-    tabs.forEach(function (t) {
-      var on = t.getAttribute("data-tab-target") === panelId;
-      t.classList.toggle("tab-active", on);
-      t.setAttribute("aria-selected", on ? "true" : "false");
+  function bindTabGroup(root) {
+    var tablist = root.querySelector(":scope > .tablist");
+    if (!tablist) return;
+    var tabs = tablist.querySelectorAll(":scope > button[data-tab-target]");
+    var panels = Array.prototype.slice.call(
+      root.querySelectorAll(":scope > [role=tabpanel]")
+    );
+    if (!tabs.length || !panels.length) return;
+
+    function activate(panelId) {
+      Array.prototype.forEach.call(tabs, function (t) {
+        var on = t.getAttribute("data-tab-target") === panelId;
+        t.classList.toggle("tab-active", on);
+        t.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      panels.forEach(function (p) {
+        var on = p.id === panelId;
+        p.classList.toggle("tab-panel-active", on);
+        if (on) {
+          p.removeAttribute("hidden");
+        } else {
+          p.setAttribute("hidden", "");
+        }
+      });
+    }
+
+    root.addEventListener("click", function (e) {
+      var btn = e.target.closest("button[data-tab-target]");
+      if (!btn || !tablist.contains(btn)) return;
+      var id = btn.getAttribute("data-tab-target");
+      if (id) activate(id);
     });
-    panels.forEach(function (p) {
-      var on = p.id === panelId;
-      p.classList.toggle("tab-panel-active", on);
-      if (on) { p.removeAttribute("hidden"); } else { p.setAttribute("hidden", ""); }
+
+    root.addEventListener("keydown", function (e) {
+      var btn = e.target.closest("button[data-tab-target]");
+      if (!btn || !tablist.contains(btn)) return;
+      var list = Array.prototype.slice.call(tabs);
+      var idx = list.indexOf(btn);
+      if (idx < 0) return;
+      var next = null;
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+        next = list[(idx + 1) % list.length];
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+        next = list[(idx - 1 + list.length) % list.length];
+      } else if (e.key === "Home") {
+        next = list[0];
+      } else if (e.key === "End") {
+        next = list[list.length - 1];
+      }
+      if (next) {
+        e.preventDefault();
+        next.focus();
+        var tid = next.getAttribute("data-tab-target");
+        if (tid) activate(tid);
+      }
     });
   }
-  root.addEventListener("click", function (e) {
-    var btn = e.target.closest("[data-tab-target]");
-    if (!btn || !root.contains(btn)) return;
-    var id = btn.getAttribute("data-tab-target");
-    if (id) activate(id);
-  });
-  root.addEventListener("keydown", function (e) {
-    var btn = e.target.closest("button[data-tab-target]");
-    if (!btn || !root.contains(btn)) return;
-    var list = Array.prototype.slice.call(tabs);
-    var idx = list.indexOf(btn);
-    if (idx < 0) return;
-    var next = null;
-    if (e.key === "ArrowRight" || e.key === "ArrowDown") {
-      next = list[(idx + 1) % list.length];
-    } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-      next = list[(idx - 1 + list.length) % list.length];
-    } else if (e.key === "Home") { next = list[0]; }
-    else if (e.key === "End") { next = list[list.length - 1]; }
-    if (next) {
-      e.preventDefault();
-      next.focus();
-      var tid = next.getAttribute("data-tab-target");
-      if (tid) activate(tid);
-    }
-  });
+
+  document.querySelectorAll("[data-tab-group]").forEach(bindTabGroup);
 })();
 </script>
 """
@@ -332,18 +495,24 @@ def build_stack_html(report: dict[str, Any]) -> str:
     rows: list[dict[str, Any]] = [r for r in raw_results if isinstance(r, dict)]
     scen_profiles_raw = profiles if isinstance(profiles, list) else []
     scen_profiles = [p for p in scen_profiles_raw if p is not None]
-    groups = _group_rows_by_profile(rows)
-    order = _ordered_profile_keys(scen_profiles, rows)
-    if not order and rows:
-        order = list(groups.keys())
-    body = (
-        _scenario_tabs_html(order, groups) if rows else "<p>No results in report.</p>"
-    )
+    scenario_tier = str(scen.get("tier", "") or "")
+    tier_groups = _group_rows_by_tier(rows, scenario_tier=scenario_tier)
+    sorted_tiers = _sorted_tier_keys(set(tier_groups.keys()))
+    if rows:
+        body = (
+            _tier_glossary_html()
+            + '<p class="summary-note">Use <strong>tier</strong> tabs first, then '
+            "<strong>payload profile</strong> tabs within each tier. "
+            "Expand <em>What do benchmark tiers mean?</em> for definitions.</p>"
+            + _tier_top_tabs_html(sorted_tiers, tier_groups, scen_profiles)
+        )
+    else:
+        body = "<p>No results in report.</p>"
 
     iters_e = html.escape(str(iters))
     ver_e = html.escape(str(ver))
     summary = (
-        f"<p><strong>Tier:</strong> {tier} &nbsp;|&nbsp; "
+        f"<p><strong>Scenario tier:</strong> {tier} &nbsp;|&nbsp; "
         f"<strong>Profiles:</strong> {prof_txt} &nbsp;|&nbsp; "
         f"<strong>Formats:</strong> {fmt_txt} &nbsp;|&nbsp; "
         f"<strong>Compression (scenario / S1 timed):</strong> {comp_txt} &nbsp;|&nbsp; "
@@ -431,7 +600,6 @@ h1 { font-size: 1.35rem; }
   margin: 0.5rem 0 0.75rem;
   line-height: 1.4;
 }
-.scenario-tabs { margin-top: 1rem; }
 .tablist {
   display: flex;
   flex-wrap: wrap;
@@ -460,6 +628,43 @@ h1 { font-size: 1.35rem; }
 }
 .tab-panel { margin-top: 0; }
 .tab-panel[hidden] { display: none !important; }
+.summary-note {
+  font-size: 0.88rem;
+  color: #333;
+  margin: 0.75rem 0 1rem;
+  line-height: 1.45;
+}
+.tier-glossary {
+  margin: 1rem 0 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #f6f8fb;
+}
+.tier-glossary summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.tier-glossary dl { margin: 0.75rem 0 0.25rem; }
+.tier-glossary dt { margin-top: 0.5rem; }
+.tier-glossary dd {
+  margin: 0.15rem 0 0 1rem;
+  color: #333;
+  line-height: 1.45;
+  max-width: 52rem;
+}
+.tier-top { margin-top: 0.25rem; }
+.tier-tablist { margin-top: 0.5rem; }
+.tier-desc {
+  font-size: 0.9rem;
+  line-height: 1.45;
+  margin: 0 0 1rem;
+  padding: 0.65rem 0.85rem;
+  background: #f0f4f8;
+  border-radius: 6px;
+  border: 1px solid #d8e0ea;
+}
+.scenario-tabs { margin-top: 0.25rem; }
 </style>
 """.strip()
 
