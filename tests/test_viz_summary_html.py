@@ -27,6 +27,62 @@ def _row(
     }
 
 
+def test_build_summary_html_win_rate_percentages() -> None:
+    report = {
+        "report_version": 9,
+        "scenario": {
+            "tier": "S0",
+            "payload_profiles": ["small"],
+            "formats": ["avro", "json"],
+            "compression": "zstd",
+            "timed_iterations": 10,
+        },
+        "results": [
+            _row(
+                tier="S0",
+                profile="small",
+                codec="json",
+                enc=5e-6,
+                dec=5e-6,
+                rt=5e-6,
+                raw=200,
+            ),
+            _row(
+                tier="S0",
+                profile="small",
+                codec="avro",
+                enc=1e-6,
+                dec=1e-6,
+                rt=1e-6,
+                raw=90,
+            ),
+        ],
+    }
+    html = build_summary_html(report)
+    assert "Win rate across comparisons" in html
+    # Encode, decode, round-trip, raw wire → 4 wins for avro (no ties).
+    assert "<strong>100.0%</strong>" in html
+    assert "% of comparisons" in html
+
+
+def test_build_summary_html_win_rate_no_head_to_head() -> None:
+    report = {
+        "report_version": 8,
+        "scenario": {
+            "tier": "S0",
+            "payload_profiles": ["small"],
+            "formats": ["json"],
+            "compression": "zstd",
+            "timed_iterations": 3,
+        },
+        "results": [
+            _row(tier="S0", profile="small", codec="json", enc=1e-6, dec=1e-6, rt=1e-6),
+        ],
+    }
+    html = build_summary_html(report)
+    assert "No head-to-head comparisons" in html
+
+
 def test_build_summary_html_headlines_when_spread_large() -> None:
     report = {
         "report_version": 9,

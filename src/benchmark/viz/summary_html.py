@@ -108,6 +108,138 @@ def _tier_sort_key(tier: str) -> tuple[int, str]:
     return (len(TIER_ORDER), tier)
 
 
+def _group_win_races(rows: list[dict[str, Any]]) -> list[tuple[str, dict[str, float]]]:
+    """Metrics where at least two codecs have comparable scores (lower is better)."""
+
+    if len(rows) < 2:
+        return []
+    tier = _tier(rows[0])
+    races: list[tuple[str, dict[str, float]]] = []
+    for label, key in (
+        ("Encode", "encode"),
+        ("Decode", "decode"),
+        ("Round-trip", "round_trip"),
+    ):
+        scored = {c: m for c, m in _rank_by_mean(rows, key)}
+        if len(scored) >= 2:
+            races.append((label, scored))
+    wire: dict[str, float] = {}
+    for r in rows:
+        w = _mean_wire_bytes(r)
+        if w is not None and w == w and w > 0:
+            wire[_codec(r)] = w
+    if len(wire) >= 2:
+        races.append(("Raw wire (mean bytes)", wire))
+    if tier == "S1":
+        s1: dict[str, float] = {}
+        for r in rows:
+            b = _s1_timed_compressed_bytes(r)
+            if b is not None and b > 0:
+                s1[_codec(r)] = float(b)
+        if len(s1) >= 2:
+            races.append(("S1 timed compressed (bytes)", s1))
+    if tier == "S3":
+        s3: dict[str, float] = {}
+        for r in rows:
+            m3 = _s3_batch_mean(r)
+            if m3 is not None and m3 == m3 and m3 > 0:
+                s3[_codec(r)] = m3
+        if len(s3) >= 2:
+            races.append(("S3 producer batch (mean s)", s3))
+    if tier == "S4":
+        s4: dict[str, float] = {}
+        for r in rows:
+            m4 = _s4_batch_mean(r)
+            if m4 is not None and m4 == m4 and m4 > 0:
+                s4[_codec(r)] = m4
+        if len(s4) >= 2:
+            races.append(("S4 consumer batch decode (mean s)", s4))
+    return races
+
+
+def _min_value_winners(scores: dict[str, float]) -> list[str]:
+    if not scores:
+        return []
+    best = min(scores.values())
+    return [c for c, v in scores.items() if v == best]
+
+
+def _aggregate_codec_win_rates(
+    groups: dict[tuple[str, str], list[dict[str, Any]]],
+    all_rows: list[dict[str, Any]],
+) -> tuple[int, dict[str, float], list[str]]:
+    """Count comparisons; win_points per codec (ties split 1/k); sorted codec names."""
+
+    win_points: dict[str, float] = {}
+    n_comparisons = 0
+    for grp in groups.values():
+        if len(grp) < 2:
+            continue
+        for _label, scores in _group_win_races(grp):
+            winners = _min_value_winners(scores)
+            if not winners:
+                continue
+            n_comparisons += 1
+            share = 1.0 / len(winners)
+            for c in winners:
+                win_points[c] = win_points.get(c, 0.0) + share
+    all_codecs = sorted({_codec(r) for r in all_rows})
+    for c in all_codecs:
+        win_points.setdefault(c, 0.0)
+    sorted_by_pts = sorted(
+        all_codecs,
+        key=lambda c: (-win_points.get(c, 0.0), c),
+    )
+    return n_comparisons, win_points, sorted_by_pts
+
+
+def _win_rate_section(
+    groups: dict[tuple[str, str], list[dict[str, Any]]],
+    all_rows: list[dict[str, Any]],
+) -> str:
+    n, win_pts, order = _aggregate_codec_win_rates(groups, all_rows)
+    if n <= 0:
+        return (
+            '<section class="win-rate"><h2>Win rate across comparisons</h2>'
+            "<p>No head-to-head comparisons: need at least two codecs in the same "
+            "<strong>tier × profile</strong> with overlapping metrics.</p></section>"
+        )
+    intro = (
+        f"<p>Across <strong>{html.escape(str(n))}</strong> comparisons, each "
+        "picks the <strong>fastest</strong> mean time or <strong>smallest</strong> "
+        "size among codecs in that tier and payload profile. Metrics counted: "
+        "encode, decode, round-trip, raw wire (when ≥2 codecs have sizes), and "
+        "S1/S3/S4 extras when present. <strong>Ties</strong> split one point "
+        "equally (two winners → 0.5 each).</p>"
+    )
+    thead = "<tr><th>Codec</th><th>Win share</th>" "<th>% of comparisons</th></tr>"
+    body: list[str] = []
+    for c in order:
+        pts = win_pts.get(c, 0.0)
+        pct = 100.0 * pts / n if n else 0.0
+        body.append(
+            "<tr>"
+            f"<td><code>{html.escape(c)}</code></td>"
+            f'<td class="num">{html.escape(f"{pts:.2f}")}</td>'
+            f'<td class="num"><strong>{html.escape(f"{pct:.1f}")}%</strong></td>'
+            "</tr>",
+        )
+    tbl = (
+        '<table class="matrix win-rate-table"><thead>'
+        f"{thead}</thead><tbody>{''.join(body)}</tbody></table>"
+    )
+    fine = (
+        '<p class="fineprint">Win share sums to the number of comparisons when '
+        "there are no ties; with ties, total share still equals that count. "
+        "Codecs with <strong>0%</strong> never ranked alone fastest on a counted "
+        "metric.</p>"
+    )
+    return (
+        '<section class="win-rate"><h2>Win rate across comparisons</h2>'
+        f"{intro}{tbl}{fine}</section>"
+    )
+
+
 def _rank_by_mean(
     rows: list[dict[str, Any]],
     block_key: str,
@@ -406,6 +538,17 @@ h2 { font-size: 1.05rem; margin-top: 1.25rem; }
 }
 .matrix th { background: #e8eef5; }
 .matrix td.best { background: #e6f4ea; font-weight: 600; }
+.win-rate {
+  margin: 1rem 0 1.25rem;
+  padding: 0.75rem 1rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #c5d4e8;
+  background: #f4f8fc;
+}
+.win-rate-table td.num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
 .fineprint {
   font-size: 0.78rem;
   color: #444;
@@ -474,7 +617,8 @@ def build_summary_html(report: dict[str, Any]) -> str:
     else:
         bullets = _collect_headline_bullets(groups)
         body = (
-            '<section class="intro"><h2>Headlines</h2><ul>'
+            _win_rate_section(groups, rows)
+            + '<section class="intro"><h2>Headlines</h2><ul>'
             f'{"".join(bullets)}</ul>'
             "<p>Each table compares codecs for the same benchmark tier and payload "
             "profile. Open the stack visualization for per-codec diagrams and bar "
