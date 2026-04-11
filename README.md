@@ -24,7 +24,7 @@ ksp-bench run --scenario all --tier S0 --formats all --output-dir reports/
 
 - **Profiles:** `small`, `medium`, `large`, `evolution`, **`all`** (runs small+medium+large), or a **comma-separated** list (e.g. `small,medium`). Evolution uses Avro schema v1 → v2 when format is Avro.
 - **Tiers:** `S0` codec only; `S1` times **encode→compress** and **decompress→decode** with **`--compression gzip|zstd`** (levels: **`--s1-gzip-level`** / **`--s1-zstd-level`**, defaults 6 / 3). Phase-3 **`--gzip-level` / `--zstd-level`** remain separate **size probes** on raw wire.
-- **Formats:** `all` or comma-separated `avro,protobuf,json`. The CLI default is **`all`** (three codecs). If you pass e.g. **`--formats json`**, only that codec appears in `report.json` / `report.md`.
+- **Formats:** `all` or comma-separated `avro,protobuf,json`. The CLI default is **`all`** (three codecs). If you pass e.g. **`--formats json`**, only that codec appears in `report.json` / `report.md`. Details: [Avro](#avro), [Protobuf](#protocol-buffers-protobuf).
 - **Wire sizes (Phase 3):** `--gzip-level`, `--zstd-level` control size probes; optional `--confluent-envelope` / `--confluent-prefix-bytes` for Kafka-shaped value totals (independent of S1 timing compression).
 
 Rubrics under `rubrics/` are merged into `report.json` when those files exist (default discovery from the current working directory). Each embedded rubric includes a pinned **`rubric_ref`** (e.g. `governance.v1`); **`rubric_index`** lists refs in the report. **`report.md`** includes an **appendix** with weights, checklist **evidence prompts**, and space for human scores.
@@ -40,9 +40,25 @@ Optional regression hints (same scenario fingerprint as the baseline `report.jso
 ksp-bench run --scenario small --formats json --baseline-report reports/prior/report.json
 ```
 
-## Protobuf code generation
+## Avro
 
-If `event.proto` changes, regenerate `src/benchmark/fixtures/event_pb2.py`:
+- **Library:** [fastavro](https://github.com/fastavro/fastavro) (see `pyproject.toml` for the pinned range).
+- **Schemas:** JSON Avro definitions under `src/benchmark/fixtures/`:
+  - `analytics_event_v2.avsc` — default writer/reader for most profiles.
+  - `analytics_event_v1.avsc` — used with **`evolution`** profile: writer omits `new_field`, reader uses v2 (schema evolution path).
+- **Wire format:** schemaless encode/decode in `benchmark.codecs.avro_codec` (no embedded writer schema in the benchmark bytes beyond what fastavro emits for that mode).
+- **CLI:** include Avro in a run with `--formats avro` or `--formats all`. Reports list one result row per codec (e.g. **avro**) alongside protobuf and json.
+
+## Protocol Buffers (Protobuf)
+
+- **Library:** [protobuf](https://github.com/protocolbuffers/protobuf) Python runtime (pinned in `pyproject.toml`).
+- **Schema:** `src/benchmark/fixtures/event.proto` — `AnalyticsEvent` and nested `EventContext`, aligned with the same logical fields as Avro/JSON fixtures.
+- **Generated code:** `src/benchmark/fixtures/event_pb2.py` is checked in; the benchmark uses `SerializeToString` / `ParseFromString` via `benchmark.codecs.protobuf_codec`.
+- **CLI:** include Protobuf with `--formats protobuf` or `--formats all`. Result rows use codec name **protobuf**.
+
+### Regenerating `event_pb2.py`
+
+If `event.proto` changes, regenerate stubs (dev venv; `grpcio-tools` is a **dev** extra, not a runtime dependency):
 
 ```bash
 python -m grpc_tools.protoc \
@@ -50,8 +66,6 @@ python -m grpc_tools.protoc \
   --python_out=src/benchmark/fixtures \
   src/benchmark/fixtures/event.proto
 ```
-
-(`grpcio-tools` is not a runtime dependency; use a dev venv.)
 
 ## Development
 
