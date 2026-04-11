@@ -26,6 +26,10 @@ def test_parse_scenarios_single() -> None:
     assert _parse_scenarios("medium") == [PayloadProfile.medium]
 
 
+def test_parse_scenarios_map_heavy() -> None:
+    assert _parse_scenarios("map_heavy") == [PayloadProfile.map_heavy]
+
+
 def test_parse_scenarios_empty_raises() -> None:
     with pytest.raises(typer.BadParameter):
         _parse_scenarios("  ")

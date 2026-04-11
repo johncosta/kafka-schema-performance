@@ -27,7 +27,7 @@ def main() -> None:
 
 
 def _parse_scenarios(value: str) -> list[PayloadProfile]:
-    """One profile, comma-separated list, or ``all`` (= small+medium+large)."""
+    """One profile, comma-separated list, or ``all`` (= small+medium+large only)."""
 
     raw = value.strip()
     if not raw:
@@ -75,8 +75,8 @@ def run_cmd(
         "--scenario",
         "-s",
         help=(
-            "Payload profile(s): small | medium | large | evolution | all "
-            "(small+medium+large) | comma-separated list"
+            "Payload profile(s): small | medium | large | map_heavy | evolution | "
+            "all (small+medium+large) | comma-separated list"
         ),
     ),
     tier: str = typer.Option(

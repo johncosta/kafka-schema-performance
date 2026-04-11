@@ -11,6 +11,7 @@ from benchmark.generate.records import (
     PayloadProfile,
     golden_evolution_event,
     golden_large_event,
+    golden_map_heavy_event,
     golden_medium_event,
     golden_small_event,
     sample_event,
@@ -24,6 +25,7 @@ from benchmark.models.event import AnalyticsEvent
         golden_small_event,
         golden_medium_event,
         golden_large_event,
+        golden_map_heavy_event,
         golden_evolution_event,
     ],
 )
@@ -51,5 +53,13 @@ def test_avro_evolution_codec_roundtrip_golden() -> None:
 
 def test_all_formats_medium_roundtrip() -> None:
     e = sample_event(PayloadProfile.medium, seed=3)
+    for codec in (AvroCodec(), ProtobufCodec(), JsonCodec()):
+        assert codec.decode(codec.encode(e)) == e
+
+
+def test_all_formats_map_heavy_roundtrip() -> None:
+    e = sample_event(PayloadProfile.map_heavy, seed=11)
+    assert len(e.props) == 96
+    assert e.context is not None and len(e.context.tags) == 72
     for codec in (AvroCodec(), ProtobufCodec(), JsonCodec()):
         assert codec.decode(codec.encode(e)) == e
