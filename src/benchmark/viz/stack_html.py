@@ -267,14 +267,19 @@ def _group_rows_by_tier(
     return groups
 
 
-def _sorted_tier_keys(keys: set[str]) -> list[str]:
-    def _key(t: str) -> tuple[int, str]:
-        try:
-            return (TIER_ORDER.index(t), t)
-        except ValueError:
-            return (len(TIER_ORDER), t)
+def _pick_default_tier_tab(
+    scenario_tier: str,
+    tier_to_rows: dict[str, list[dict[str, Any]]],
+) -> str:
+    """First-open tier tab: scenario tier when valid, else first tier that has rows."""
 
-    return sorted(keys, key=_key)
+    st = (scenario_tier or "").strip()
+    if st in TIER_ORDER:
+        return st
+    for t in TIER_ORDER:
+        if tier_to_rows.get(t):
+            return t
+    return TIER_ORDER[0]
 
 
 def _tier_glossary_html() -> str:
@@ -350,12 +355,26 @@ def _tier_panel_inner(
     tier: str,
     tier_rows: list[dict[str, Any]],
     scenario_profiles: list[Any],
+    *,
+    scenario_tier: str,
 ) -> str:
     desc = TIER_DESCRIPTIONS.get(
         tier,
         f"Tier {tier}: see the measurement block in report.json for definitions.",
     )
     desc_html = html.escape(desc)
+    head = (
+        f'<p class="tier-desc"><strong>{html.escape(tier)}</strong> — {desc_html}</p>'
+    )
+    if not tier_rows:
+        st = html.escape((scenario_tier or "?").strip() or "?")
+        return (
+            f"{head}"
+            "<p class=\"empty-tier\">No result rows for this tier in this report. "
+            f"The run was recorded at scenario tier <strong>{st}</strong> "
+            "(see summary above).</p>"
+        )
+
     groups = _group_rows_by_profile(tier_rows)
     order = _ordered_profile_keys(scenario_profiles, tier_rows)
     if not order and tier_rows:
@@ -363,25 +382,25 @@ def _tier_panel_inner(
     ts = _tier_slug(tier)
     prefix = f"prof-{ts}-"
     scenarios = _scenario_tabs_html(order, groups, id_prefix=prefix)
-    return (
-        f'<p class="tier-desc"><strong>{html.escape(tier)}</strong> — {desc_html}</p>'
-        f"{scenarios}"
-    )
+    return f"{head}{scenarios}"
 
 
 def _tier_top_tabs_html(
-    sorted_tiers: list[str],
+    all_tiers: list[str],
     tier_to_rows: dict[str, list[dict[str, Any]]],
     scenario_profiles: list[Any],
+    *,
+    default_tier: str,
+    scenario_tier: str,
 ) -> str:
     tab_buttons: list[str] = []
     tier_panels: list[str] = []
-    for i, tier in enumerate(sorted_tiers):
+    for tier in all_tiers:
         slug = _tier_slug(tier)
         tab_id = f"tiertab-{slug}"
         panel_id = f"tierpanel-{slug}"
         label = html.escape(tier)
-        selected = i == 0
+        selected = tier == default_tier
         aria_sel = "true" if selected else "false"
         tab_class = "tab" + (" tab-active" if selected else "")
         panel_class = "tab-panel" + (" tab-panel-active" if selected else "")
@@ -392,7 +411,12 @@ def _tier_top_tabs_html(
             f'aria-controls="{html.escape(panel_id)}" '
             f'data-tab-target="{html.escape(panel_id)}">{label}</button>',
         )
-        inner = _tier_panel_inner(tier, tier_to_rows.get(tier, []), scenario_profiles)
+        inner = _tier_panel_inner(
+            tier,
+            tier_to_rows.get(tier, []),
+            scenario_profiles,
+            scenario_tier=scenario_tier,
+        )
         tier_panels.append(
             f'<div class="{panel_class}" role="tabpanel" '
             f'id="{html.escape(panel_id)}" '
@@ -497,14 +521,21 @@ def build_stack_html(report: dict[str, Any]) -> str:
     scen_profiles = [p for p in scen_profiles_raw if p is not None]
     scenario_tier = str(scen.get("tier", "") or "")
     tier_groups = _group_rows_by_tier(rows, scenario_tier=scenario_tier)
-    sorted_tiers = _sorted_tier_keys(set(tier_groups.keys()))
+    default_tab = _pick_default_tier_tab(scenario_tier, tier_groups)
     if rows:
         body = (
             _tier_glossary_html()
-            + '<p class="summary-note">Use <strong>tier</strong> tabs first, then '
-            "<strong>payload profile</strong> tabs within each tier. "
+            + '<p class="summary-note">Use <strong>tier</strong> tabs (S0–S4) first, '
+            "then <strong>payload profile</strong> tabs when that tier has rows. "
+            "Tabs with no data explain that the run used another scenario tier. "
             "Expand <em>What do benchmark tiers mean?</em> for definitions.</p>"
-            + _tier_top_tabs_html(sorted_tiers, tier_groups, scen_profiles)
+            + _tier_top_tabs_html(
+                list(TIER_ORDER),
+                tier_groups,
+                scen_profiles,
+                default_tier=default_tab,
+                scenario_tier=scenario_tier or "?",
+            )
         )
     else:
         body = "<p>No results in report.</p>"
@@ -663,6 +694,12 @@ h1 { font-size: 1.35rem; }
   background: #f0f4f8;
   border-radius: 6px;
   border: 1px solid #d8e0ea;
+}
+.empty-tier {
+  font-size: 0.88rem;
+  color: #555;
+  margin: 0 0 0.5rem;
+  line-height: 1.45;
 }
 .scenario-tabs { margin-top: 0.25rem; }
 </style>

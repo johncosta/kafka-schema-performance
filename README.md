@@ -40,7 +40,7 @@ Optional regression hints (same scenario fingerprint as the baseline `report.jso
 ksp-bench run --scenario small --formats json --baseline-report reports/prior/report.json
 ```
 
-**Stack visualization:** turn a `report.json` into a self-contained HTML page (conceptual encode → wire → decode flow, plus horizontal bars of **mean** time per measured component—including S2 registry fetches or S3/S4 batch rows when the report includes them). **Top-level tabs are benchmark tiers** (S0–S4); if result rows mix tiers, each tier gets its own tab. Inside a tier, **payload profile** tabs group codecs. A collapsible **What do benchmark tiers mean?** block defines S0–S4. The header lists **scenario tier**, **profiles**, **formats**, and **scenario compression**; each result shows **Phase-3 gzip and zstd** probe totals from `compressed_payload_bytes`, and **S1** rows add the **timed compressed** byte length.
+**Stack visualization:** turn a `report.json` into a self-contained HTML page (conceptual encode → wire → decode flow, plus horizontal bars of **mean** time per measured component—including S2 registry fetches or S3/S4 batch rows when the report includes them). **Top-level tabs are always all benchmark tiers** (S0–S4); only the scenario tier (and any other tier present in `results`) has data, the rest show a short empty state. Inside a tier, **payload profile** tabs group codecs. A collapsible **What do benchmark tiers mean?** block defines S0–S4. The header lists **scenario tier**, **profiles**, **formats**, and **scenario compression**; each result shows **Phase-3 gzip and zstd** probe totals from `compressed_payload_bytes`, and **S1** rows add the **timed compressed** byte length.
 
 ```bash
 ksp-bench viz reports/report.json -o reports/stack.html

@@ -83,6 +83,12 @@ def test_build_stack_html_includes_encode_decode_bars() -> None:
     }
     html = build_stack_html(report)
     assert "data-tab-group" in html
+    for t in TIER_ORDER:
+        assert f'id="tiertab-{t.lower()}"' in html
+        assert f'id="tierpanel-{t.lower()}"' in html
+    assert 'class="tab tab-active" role="tab" id="tiertab-s0"' in html
+    assert '<p class="empty-tier">' in html
+    assert html.count('<p class="empty-tier">') == 4
     assert 'id="tierpanel-s0"' in html
     assert "tier-desc" in html
     assert "Codec only" in html
@@ -119,7 +125,9 @@ def test_build_stack_html_s2_registry_bars() -> None:
         ],
     }
     html = build_stack_html(report)
+    assert 'class="tab tab-active" role="tab" id="tiertab-s2"' in html
     assert 'id="tierpanel-s2"' in html
+    assert "empty-tier" in html
     assert "loopback mock Confluent-style schema registry" in html
     assert "S2: registry GET (new TCP each)" in html
     assert "S2: registry GET (keep-alive)" in html
@@ -149,6 +157,7 @@ def test_build_stack_html_s1_shows_timed_compression_meta() -> None:
         ],
     }
     html = build_stack_html(report)
+    assert 'class="tab tab-active" role="tab" id="tiertab-s1"' in html
     assert 'id="tierpanel-s1"' in html
     assert "Codec plus timed compression" in html
     assert "S1 timed wire" in html
@@ -184,6 +193,7 @@ def test_build_stack_html_s3_s4_bars() -> None:
             "results": [s3],
         },
     )
+    assert 'class="tab tab-active" role="tab" id="tiertab-s3"' in html3
     assert 'id="tierpanel-s3"' in html3
     assert "producer-style batch" in html3
     assert "S3: producer batch" in html3
@@ -201,6 +211,7 @@ def test_build_stack_html_s3_s4_bars() -> None:
             "results": [s4],
         },
     )
+    assert 'class="tab tab-active" role="tab" id="tiertab-s4"' in html4
     assert 'id="tierpanel-s4"' in html4
     assert "consumer-style batch" in html4
     assert "S4: consumer batch decode" in html4
@@ -230,8 +241,9 @@ def test_build_stack_html_mixed_row_tiers_two_top_tabs() -> None:
         ],
     }
     html = build_stack_html(report)
-    assert 'id="tiertab-s0"' in html
-    assert 'id="tiertab-s1"' in html
+    for t in TIER_ORDER:
+        assert f'id="tiertab-{t.lower()}"' in html
+    assert 'class="tab tab-active" role="tab" id="tiertab-s0"' in html
     assert 'id="tierpanel-s0"' in html
     assert 'id="tierpanel-s1"' in html
 
@@ -267,7 +279,7 @@ def test_build_stack_html_full_matrix_sections() -> None:
     }
     html = build_stack_html(report)
     assert html.count('<section class="result">') == 12
-    assert html.count('role="tabpanel"') == 5
+    assert html.count('role="tabpanel"') == 9
     assert html.count('data-tab-target="prof-s0-panel-') == 4
     assert 'id="prof-s0-panel-small"' in html
     assert 'id="prof-s0-panel-evolution"' in html
@@ -308,6 +320,7 @@ def test_build_stack_html_from_build_report_each_tier_and_compression(
     )
     html = build_stack_html(report)
     assert _TIER_VIZ_NEEDLES[tier] in html
+    assert f'class="tab tab-active" role="tab" id="tiertab-{tier.lower()}"' in html
     assert f'id="tierpanel-{tier.lower()}"' in html
     assert "What do benchmark tiers mean?" in html
     assert f"<strong>Compression (scenario / S1 timed):</strong> {compression}" in html
@@ -329,6 +342,7 @@ def test_build_stack_html_from_build_report_full_matrix_avro_protobuf_json() -> 
     )
     html = build_stack_html(report)
     assert html.count('<section class="result">') == 12
+    assert 'class="tab tab-active" role="tab" id="tiertab-s0"' in html
     assert "avro, protobuf, json" in html
 
 
