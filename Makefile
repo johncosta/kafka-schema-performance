@@ -7,7 +7,7 @@ PY := $(VENV)/bin/python
 SCENARIOS := small,medium,large,evolution
 FORMATS := all
 
-.PHONY: install lint test report
+.PHONY: install lint test test-kafka report
 
 $(PY):
 	python3 -m venv $(VENV)
@@ -23,6 +23,14 @@ lint: $(PY)
 
 test: $(PY)
 	$(PY) -m pytest -q
+
+# Kafka-protocol E2E (install .[kafka]; Docker required). Redpanda compose on 127.0.0.1:19092.
+test-kafka: $(PY)
+	docker compose -f docker/docker-compose.kafka.yml up -d
+	$(PY) scripts/wait_for_tcp.py --host 127.0.0.1 --port 19092 --timeout 90
+	KSP_KAFKA_BOOTSTRAP=127.0.0.1:19092 KSP_KAFKA_BROKER_LABEL=redpanda_compose \
+		$(PY) -m pytest tests/integration -m kafka -v
+	docker compose -f docker/docker-compose.kafka.yml down
 	$(VENV)/bin/ksp-bench run --scenario $(SCENARIOS) --tier S0 --formats $(FORMATS) --compression zstd --warmup 2 --iterations 5 --output-dir /tmp/ksp-s0-zstd
 	test -f /tmp/ksp-s0-zstd/report.json
 	$(VENV)/bin/ksp-bench run --scenario $(SCENARIOS) --tier S0 --formats $(FORMATS) --compression gzip --warmup 2 --iterations 5 --output-dir /tmp/ksp-s0-gzip

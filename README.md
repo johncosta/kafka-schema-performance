@@ -14,6 +14,18 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
+Optional **Kafka-protocol** end-to-end timings (publish + read back serialized payloads) use the **`[kafka]`** extra (`kafka-python-ng`, Testcontainers). They attach a **`kafka_e2e`** block to `report.json` and appear in **`summary.html`** when present. Local broker:
+
+```bash
+pip install -e ".[dev,kafka]"
+docker compose -f docker/docker-compose.kafka.yml up -d
+export KSP_KAFKA_BOOTSTRAP=127.0.0.1:19092
+pytest tests/integration -m kafka -v
+# or: make test-kafka
+```
+
+Without **`KSP_KAFKA_BOOTSTRAP`** (and without **`KSP_USE_TESTCONTAINERS=1`**), `@pytest.mark.kafka` tests **skip** so default `pytest` stays fast. Redpanda in compose is **Kafka API–compatible**; metrics are labeled via **`KSP_KAFKA_BROKER_LABEL`** (optional).
+
 ## Run benchmarks
 
 ```bash

@@ -339,6 +339,83 @@ def _regression_block(report: dict[str, Any]) -> str:
     )
 
 
+def _kafka_e2e_section(report: dict[str, Any]) -> str:
+    block = report.get("kafka_e2e")
+    if not isinstance(block, dict):
+        return ""
+    ver = block.get("kafka_e2e_version", "?")
+    impl = html.escape(str(block.get("broker_implementation", "?")))
+    boot = html.escape(str(block.get("bootstrap_servers", "?")))
+    phases = block.get("phases")
+    phase_ul = ""
+    if isinstance(phases, dict) and phases:
+        lis = []
+        for k, v in phases.items():
+            if isinstance(v, str):
+                k_esc = html.escape(str(k))
+                v_esc = html.escape(v)
+                lis.append(f"<li><strong>{k_esc}:</strong> {v_esc}</li>")
+        if lis:
+            phase_ul = f"<ul>{''.join(lis)}</ul>"
+    cases = block.get("cases")
+    rows: list[str] = []
+    if isinstance(cases, list):
+        for c in cases:
+            if not isinstance(c, dict):
+                continue
+            codec = html.escape(str(c.get("codec", "?")))
+            prof = html.escape(str(c.get("payload_profile", "?")))
+            vb = c.get("value_bytes", "?")
+            ser = c.get("serialize")
+            pr = c.get("produce")
+            co = c.get("consume")
+            ser_m = ""
+            if isinstance(ser, dict):
+                ms = ser.get("mean_s")
+                if isinstance(ms, (int, float)) and ms == ms:
+                    ser_m = html.escape(f"{float(ms) * 1e6:.2f} µs")
+            pr_m = ""
+            if isinstance(pr, dict):
+                mp = pr.get("mean_per_message_s")
+                if isinstance(mp, (int, float)) and mp == mp:
+                    pr_m = html.escape(f"{float(mp) * 1e3:.3f} ms/msg")
+            co_m = ""
+            if isinstance(co, dict):
+                mc = co.get("mean_per_message_s")
+                if isinstance(mc, (int, float)) and mc == mc:
+                    co_m = html.escape(f"{float(mc) * 1e3:.3f} ms/msg")
+            rows.append(
+                "<tr>"
+                f"<td><code>{codec}</code></td>"
+                f"<td>{prof}</td>"
+                f"<td>{html.escape(str(vb))}</td>"
+                f"<td>{ser_m or '—'}</td>"
+                f"<td>{pr_m or '—'}</td>"
+                f"<td>{co_m or '—'}</td>"
+                "</tr>",
+            )
+    thead = (
+        "<tr><th>Codec</th><th>Profile</th><th>Value bytes</th>"
+        "<th>Serialize (mean)</th><th>Produce (mean/msg)</th>"
+        "<th>Consume (mean/msg)</th></tr>"
+    )
+    tbl = (
+        '<table class="matrix"><thead>'
+        f"{thead}</thead><tbody>{''.join(rows)}</tbody></table>"
+    )
+    fine = (
+        '<p class="fineprint">Broker-backed metrics are <strong>not</strong> '
+        "tier S0–S4; they measure real Kafka-protocol I/O plus in-process "
+        f"serialize. <code>kafka_e2e_version</code> {html.escape(str(ver))}.</p>"
+    )
+    return (
+        '<section class="kafka-e2e"><h2>Kafka-protocol end-to-end</h2>'
+        f"<p><strong>Broker:</strong> {impl} &nbsp;|&nbsp; "
+        f"<strong>Bootstrap:</strong> <code>{boot}</code></p>"
+        f"{phase_ul}{tbl}{fine}</section>"
+    )
+
+
 def _limitations_block(report: dict[str, Any]) -> str:
     lim = report.get("limitations")
     if not isinstance(lim, dict):
@@ -576,6 +653,13 @@ h2 { font-size: 1.05rem; margin-top: 1.25rem; }
   background: #fffbeb;
 }
 .callout.warn h2 { margin-top: 0; font-size: 1rem; }
+.kafka-e2e {
+  margin: 1rem 0 1.25rem;
+  padding: 0.75rem 1rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #c9c9c9;
+  background: #faf8f5;
+}
 .page-nav {
   margin: 0 0 0.75rem;
   font-size: 0.92rem;
@@ -628,8 +712,9 @@ def build_summary_html(
             continue
         sections.append(_section_for_group(t, prof, g))
 
+    kafka_html = _kafka_e2e_section(report)
     if not sections:
-        body = "<p>No results in report.</p>"
+        body = kafka_html + "<p>No results in report.</p>"
     else:
         bullets = _collect_headline_bullets(groups)
         if companion_stack_href:
@@ -646,7 +731,8 @@ def build_summary_html(
                 "charts.</p>"
             )
         body = (
-            _win_rate_section(groups, rows)
+            kafka_html
+            + _win_rate_section(groups, rows)
             + '<section class="intro"><h2>Headlines</h2><ul>'
             f'{"".join(bullets)}</ul>'
             f"{stack_blurb}"

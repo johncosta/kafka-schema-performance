@@ -208,3 +208,38 @@ def test_write_summary_visualization_round_trip(tmp_path: Path) -> None:
     write_summary_visualization(jp, op)
     assert op.is_file()
     assert "Performance summary" in op.read_text(encoding="utf-8")
+
+
+def test_build_summary_html_includes_kafka_e2e_section() -> None:
+    report = {
+        "report_version": 9,
+        "scenario": {
+            "tier": "S0",
+            "payload_profiles": ["small"],
+            "formats": ["json"],
+            "compression": "zstd",
+            "timed_iterations": 1,
+        },
+        "results": [
+            _row(tier="S0", profile="small", codec="json", enc=1e-6, dec=1e-6, rt=1e-6),
+        ],
+        "kafka_e2e": {
+            "kafka_e2e_version": 1,
+            "broker_implementation": "test",
+            "bootstrap_servers": "127.0.0.1:19092",
+            "phases": {"produce": "sync send"},
+            "cases": [
+                {
+                    "codec": "json",
+                    "payload_profile": "small",
+                    "value_bytes": 10,
+                    "serialize": {"mean_s": 1e-7},
+                    "produce": {"mean_per_message_s": 1e-4},
+                    "consume": {"mean_per_message_s": 2e-4},
+                },
+            ],
+        },
+    }
+    html = build_summary_html(report)
+    assert "Kafka-protocol end-to-end" in html
+    assert "127.0.0.1:19092" in html

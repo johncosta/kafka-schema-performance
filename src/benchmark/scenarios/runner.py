@@ -158,6 +158,12 @@ def _select_codec(fmt: str, profile: PayloadProfile) -> Codec:
     raise ValueError(f"unknown format: {fmt!r}")
 
 
+def codec_for_profile(fmt: str, profile: PayloadProfile) -> Codec:
+    """Public helper: benchmark codec for ``fmt`` and payload profile."""
+
+    return _select_codec(fmt, profile)
+
+
 def _bench_codec_s2(
     codec: Codec,
     event: AnalyticsEvent,
