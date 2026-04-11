@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import math
+from typing import cast
+
+import pytest
 
 from benchmark.codecs.json_codec import JsonCodec
 from benchmark.generate.records import PayloadProfile, golden_small_event
+from benchmark.metrics.compress import CompressionAlg
 from benchmark.scenarios.runner import bench_codec, build_report
 
 
@@ -203,3 +207,56 @@ def test_build_report_s1_scenario_block() -> None:
     assert isinstance(s1, dict)
     assert s1["timed_compression_algorithm"] == "zstd"
     assert s1["zstd_level_cli"] == 5
+
+
+def test_build_report_all_profiles_all_formats_s0_matrix() -> None:
+    report = build_report(
+        profiles=list(PayloadProfile),
+        tier="S0",
+        formats=["avro", "protobuf", "json"],
+        compression="zstd",
+        warmup=0,
+        iterations=1,
+        seed=3,
+        rubric_governance=None,
+        rubric_maintainability=None,
+    )
+    assert len(report["results"]) == 12
+    keys = {(row["payload_profile"], row["codec"]) for row in report["results"]}
+    profiles = {p.value for p in PayloadProfile}
+    codecs = {"avro", "protobuf", "json"}
+    assert keys == {(p, c) for p in profiles for c in codecs}
+    assert report["scenario"]["formats"] == ["avro", "protobuf", "json"]
+    assert report["scenario"]["payload_profiles"] == [p.value for p in PayloadProfile]
+    for row in report["results"]:
+        assert row["tier"] == "S0"
+        gz = row["compressed_payload_bytes"]["gzip"]["bytes"]
+        zs = row["compressed_payload_bytes"]["zstd"]["bytes"]
+        assert gz > 0 and zs > 0
+
+
+@pytest.mark.parametrize("compression", ["gzip", "zstd"])
+def test_build_report_all_profiles_all_formats_s1_matrix(compression: str) -> None:
+    comp = cast(CompressionAlg, compression)
+    report = build_report(
+        profiles=list(PayloadProfile),
+        tier="S1",
+        formats=["avro", "protobuf", "json"],
+        compression=comp,
+        warmup=0,
+        iterations=1,
+        seed=2,
+        rubric_governance=None,
+        rubric_maintainability=None,
+    )
+    assert len(report["results"]) == 12
+    assert report["scenario"]["s1"]["timed_compression_algorithm"] == compression
+    for row in report["results"]:
+        assert row["tier"] == "S1"
+        assert row["compression"] == compression
+        assert row["s1_timed_compression"]["timed_algorithm"] == compression
+        assert row["compressed_size_bytes"] > 0
+        assert row["raw_size_bytes"] > 0
+        ratio = row["s1_timed_compression"]["ratio_compressed_to_raw"]
+        assert isinstance(ratio, (int, float))
+        assert ratio == ratio  # not NaN

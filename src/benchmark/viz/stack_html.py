@@ -87,12 +87,49 @@ def _max_bar(bars: list[tuple[str, float, str]]) -> float:
     return max(vals) if vals else 1.0
 
 
+def _phase3_probe_sizes(row: dict[str, Any]) -> tuple[int | None, int | None]:
+    """Return (gzip_bytes, zstd_bytes) from Phase-3 wire-size probes, if present."""
+
+    cpp = row.get("compressed_payload_bytes")
+    if not isinstance(cpp, dict):
+        return None, None
+    gz = cpp.get("gzip")
+    zs = cpp.get("zstd")
+    gb = gz.get("bytes") if isinstance(gz, dict) else None
+    zb = zs.get("bytes") if isinstance(zs, dict) else None
+    gi = int(gb) if isinstance(gb, int) else None
+    zi = int(zb) if isinstance(zb, int) else None
+    return gi, zi
+
+
 def _row_section(row: dict[str, Any]) -> str:
     profile = html.escape(str(row.get("payload_profile", "?")))
     codec = html.escape(str(row.get("codec", "?")))
     tier = html.escape(str(row.get("tier", "?")))
     raw_b = row.get("raw_size_bytes")
     raw_txt = html.escape(str(raw_b)) if raw_b is not None else "?"
+
+    meta_lines: list[str] = [
+        f'<p class="meta">Mean raw wire: <strong>{raw_txt}</strong> bytes</p>',
+    ]
+    gz_b, zs_b = _phase3_probe_sizes(row)
+    if gz_b is not None and zs_b is not None:
+        meta_lines.append(
+            '<p class="meta fine">Phase-3 size probes on raw wire: '
+            f"<strong>gzip</strong> {html.escape(str(gz_b))} bytes &nbsp;|&nbsp; "
+            f"<strong>zstd</strong> {html.escape(str(zs_b))} bytes "
+            "(levels from <code>scenario.size_and_cost</code>; not the S1 timed "
+            "compressor unless tier is S1).</p>",
+        )
+    if row.get("tier") == "S1":
+        comp_b = row.get("compressed_size_bytes")
+        row_comp = row.get("compression")
+        if comp_b is not None:
+            alg = html.escape(str(row_comp)) if row_comp is not None else "?"
+            meta_lines.append(
+                f'<p class="meta fine">S1 timed wire (after <strong>{alg}</strong>): '
+                f"<strong>{html.escape(str(comp_b))}</strong> bytes</p>",
+            )
 
     bars = _bars_for_row(row)
     mx = _max_bar(bars)
@@ -131,7 +168,7 @@ def _row_section(row: dict[str, Any]) -> str:
     return (
         f'<section class="result"><h2>{profile} / <code>{codec}</code> '
         f'<span class="tier">({tier})</span></h2>'
-        f'<p class="meta">Mean raw wire: <strong>{raw_txt}</strong> bytes</p>'
+        f'{"".join(meta_lines)}'
         f"{pipeline}{note}"
         f'<div class="bars">{"".join(bar_html)}</div></section>'
     )
@@ -144,6 +181,10 @@ def build_stack_html(report: dict[str, Any]) -> str:
     tier = html.escape(str(scen.get("tier", "?")))
     profiles = scen.get("payload_profiles", [])
     prof_txt = html.escape(", ".join(str(p) for p in profiles) if profiles else "?")
+    fmt_list = scen.get("formats", [])
+    fmt_txt = html.escape(", ".join(str(x) for x in fmt_list) if fmt_list else "?")
+    comp = scen.get("compression")
+    comp_txt = html.escape(str(comp)) if comp is not None else "?"
     iters = scen.get("timed_iterations", "?")
     ver = report.get("report_version", "?")
 
@@ -159,6 +200,8 @@ def build_stack_html(report: dict[str, Any]) -> str:
     summary = (
         f"<p><strong>Tier:</strong> {tier} &nbsp;|&nbsp; "
         f"<strong>Profiles:</strong> {prof_txt} &nbsp;|&nbsp; "
+        f"<strong>Formats:</strong> {fmt_txt} &nbsp;|&nbsp; "
+        f"<strong>Compression (scenario / S1 timed):</strong> {comp_txt} &nbsp;|&nbsp; "
         f"<strong>Timed iterations:</strong> {iters_e} &nbsp;|&nbsp; "
         f"<code>report_version</code> {ver_e}</p>"
     )
@@ -199,6 +242,7 @@ h1 { font-size: 1.35rem; }
 .result h2 { margin-top: 0; font-size: 1.1rem; }
 .tier { color: #555; font-weight: normal; }
 .meta { margin: 0.25rem 0 0.75rem; font-size: 0.9rem; }
+.meta.fine { font-size: 0.82rem; color: #444; margin-top: -0.35rem; }
 .pipeline {
   display: flex;
   flex-wrap: wrap;

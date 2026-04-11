@@ -40,7 +40,7 @@ Optional regression hints (same scenario fingerprint as the baseline `report.jso
 ksp-bench run --scenario small --formats json --baseline-report reports/prior/report.json
 ```
 
-**Stack visualization:** turn a `report.json` into a self-contained HTML page (conceptual encode → wire → decode flow, plus horizontal bars of **mean** time per measured component—including S2 registry fetches or S3/S4 batch rows when the report includes them):
+**Stack visualization:** turn a `report.json` into a self-contained HTML page (conceptual encode → wire → decode flow, plus horizontal bars of **mean** time per measured component—including S2 registry fetches or S3/S4 batch rows when the report includes them). The page header lists **profiles**, **formats**, and **scenario compression**; each result shows **Phase-3 gzip and zstd** wire-size probe totals from `compressed_payload_bytes`, and **S1** rows add the **timed compressed** byte length.
 
 ```bash
 ksp-bench viz reports/report.json -o reports/stack.html
@@ -82,9 +82,10 @@ Use the [Makefile](Makefile) so local runs match CI. The first `make install` cr
 make install   # create .venv if needed, then editable install with dev extras
 make lint      # ruff, black --check, mypy (uses .venv)
 make test      # pytest + CLI smoke (same as CI)
+make report    # same as make test, then full-profile S0 benchmark + stack.html → reports/make-report/
 ```
 
-`make test` runs **`ksp-bench`** with **`--formats all`** for S0/S1 smokes, plus short **S2**–**S4** smokes (`json` for S2–S4), so reports under `/tmp/ksp-report` through `/tmp/ksp-s4` exercise those tiers.
+`make test` runs **`ksp-bench`** with **`--formats all`**: **S0** uses all payload profiles (`small`–`evolution`), **S1** runs twice (**`zstd`** and **`gzip`**), and **S2**–**S4** use short **`json`** smokes. Outputs land under `/tmp/ksp-report`, `/tmp/ksp-s1-zstd`, `/tmp/ksp-s1-gzip`, `/tmp/ksp-s2`, `/tmp/ksp-s3`, and `/tmp/ksp-s4`.
 
 To use another Python for creating the venv, run `python3.12 -m venv .venv` yourself, then `make install` (the existing `.venv` is reused).
 
