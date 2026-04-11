@@ -1,6 +1,7 @@
 """Kafka-protocol publish + consume timings (pre-serialized value bytes).
 
-Uses ``kafka-python`` against any broker (Redpanda, Apache Kafka, Testcontainers).
+Uses ``kafka-python`` against any Kafka-compatible broker (e.g. Apache Kafka KRaft,
+Testcontainers).
 Metrics merge into ``report.json`` under ``kafka_e2e``.
 """
 
@@ -12,6 +13,10 @@ from collections.abc import Callable
 from typing import Any
 
 KAFKA_E2E_VERSION = 1
+
+# Fixed API version: stable against Apache Kafka 3.8 (KRaft) and avoids
+# kafka-python ``check_version`` / selector edge cases during broker startup.
+_KAFKA_PYTHON_API_VERSION = (2, 8, 1)
 
 
 def benchmark_kafka_case(
@@ -29,7 +34,11 @@ def benchmark_kafka_case(
     from kafka.admin import KafkaAdminClient, NewTopic
 
     topic = f"ksp-e2e-{uuid.uuid4().hex[:16]}"
-    admin = KafkaAdminClient(bootstrap_servers=bootstrap_servers, client_id="ksp-admin")
+    admin = KafkaAdminClient(
+        bootstrap_servers=bootstrap_servers,
+        client_id="ksp-admin",
+        api_version=_KAFKA_PYTHON_API_VERSION,
+    )
     try:
         admin.create_topics(
             [
@@ -60,6 +69,7 @@ def benchmark_kafka_case(
         producer = KafkaProducer(
             bootstrap_servers=bootstrap_servers,
             client_id="ksp-producer",
+            api_version=_KAFKA_PYTHON_API_VERSION,
             acks="all",
             linger_ms=0,
         )
@@ -84,6 +94,7 @@ def benchmark_kafka_case(
             bootstrap_servers=bootstrap_servers,
             group_id=group_id,
             client_id="ksp-consumer",
+            api_version=_KAFKA_PYTHON_API_VERSION,
             enable_auto_commit=False,
             auto_offset_reset="earliest",
             consumer_timeout_ms=120_000,

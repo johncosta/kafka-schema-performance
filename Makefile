@@ -8,7 +8,7 @@ SCENARIOS := small,medium,large,evolution
 FORMATS := all
 
 COMPOSE_KAFKA := docker/docker-compose.kafka.yml
-KAFKA_ENV := KSP_KAFKA_BOOTSTRAP=127.0.0.1:19092 KSP_KAFKA_BROKER_LABEL=redpanda_compose
+KAFKA_ENV := KSP_KAFKA_BOOTSTRAP=127.0.0.1:19092 KSP_KAFKA_BROKER_LABEL=apache_kafka_kraft
 
 .PHONY: install lint test test-kafka report
 
@@ -25,10 +25,10 @@ lint: $(PY)
 	$(PY) -m mypy src
 
 # Full pytest (in-process + @pytest.mark.distributed + Kafka E2E) then CLI matrix.
-# Requires Docker for Redpanda (docker/docker-compose.kafka.yml).
+# Requires Docker (Apache Kafka KRaft: docker/docker-compose.kafka.yml).
 test: $(PY)
 	docker compose -f $(COMPOSE_KAFKA) up -d
-	$(PY) scripts/wait_for_tcp.py --host 127.0.0.1 --port 19092 --timeout 90 \
+	$(PY) scripts/wait_for_tcp.py --host 127.0.0.1 --port 19092 --timeout 90 --kafka-ready \
 		|| (docker compose -f $(COMPOSE_KAFKA) down; exit 1)
 	$(KAFKA_ENV) $(PY) -m pytest -q; py_ec=$$?; docker compose -f $(COMPOSE_KAFKA) down; \
 		if [ $$py_ec -ne 0 ]; then exit $$py_ec; fi
@@ -56,7 +56,7 @@ test: $(PY)
 # Kafka integration tests only (compose up → pytest -m kafka → compose down).
 test-kafka: $(PY)
 	docker compose -f $(COMPOSE_KAFKA) up -d
-	$(PY) scripts/wait_for_tcp.py --host 127.0.0.1 --port 19092 --timeout 90 \
+	$(PY) scripts/wait_for_tcp.py --host 127.0.0.1 --port 19092 --timeout 90 --kafka-ready \
 		|| (docker compose -f $(COMPOSE_KAFKA) down; exit 1)
 	$(KAFKA_ENV) $(PY) -m pytest tests/integration -m kafka -v; py_ec=$$?; \
 		docker compose -f $(COMPOSE_KAFKA) down; exit $$py_ec
