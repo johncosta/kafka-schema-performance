@@ -7,7 +7,7 @@ import pytest
 
 from benchmark.generate.records import PayloadProfile
 from benchmark.metrics.compress import CompressionAlg
-from benchmark.scenarios.runner import ScenarioTier, build_report
+from benchmark.scenarios.runner import ReportTier, ScenarioTier, build_report
 from benchmark.viz.stack_html import (
     TIER_DESCRIPTIONS,
     TIER_ORDER,
@@ -324,6 +324,24 @@ def test_build_stack_html_from_build_report_each_tier_and_compression(
     assert f'id="tierpanel-{tier.lower()}"' in html
     assert "What do benchmark tiers mean?" in html
     assert f"<strong>Compression (scenario / S1 timed):</strong> {compression}" in html
+
+
+def test_build_stack_html_tier_all_no_empty_tier_placeholders() -> None:
+    report = build_report(
+        profiles=[PayloadProfile.small],
+        tier=cast(ReportTier, "all"),
+        formats=["json"],
+        compression=cast(CompressionAlg, "zstd"),
+        warmup=0,
+        iterations=1,
+        seed=7,
+        rubric_governance=None,
+        rubric_maintainability=None,
+        batch_size=4,
+    )
+    html = build_stack_html(report)
+    assert '<p class="empty-tier">' not in html
+    assert "Scenario tier:" in html and "all" in html
 
 
 def test_build_stack_html_from_build_report_full_matrix_avro_protobuf_json() -> None:

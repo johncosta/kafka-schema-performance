@@ -274,6 +274,8 @@ def _pick_default_tier_tab(
     """First-open tier tab: scenario tier when valid, else first tier that has rows."""
 
     st = (scenario_tier or "").strip()
+    if st == "all":
+        return TIER_ORDER[0]
     if st in TIER_ORDER:
         return st
     for t in TIER_ORDER:
@@ -370,7 +372,7 @@ def _tier_panel_inner(
         st = html.escape((scenario_tier or "?").strip() or "?")
         return (
             f"{head}"
-            "<p class=\"empty-tier\">No result rows for this tier in this report. "
+            '<p class="empty-tier">No result rows for this tier in this report. '
             f"The run was recorded at scenario tier <strong>{st}</strong> "
             "(see summary above).</p>"
         )

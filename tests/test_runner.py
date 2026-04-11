@@ -8,7 +8,13 @@ import pytest
 from benchmark.codecs.json_codec import JsonCodec
 from benchmark.generate.records import PayloadProfile, golden_small_event
 from benchmark.metrics.compress import CompressionAlg
-from benchmark.scenarios.runner import ScenarioTier, bench_codec, build_report
+from benchmark.scenarios.runner import (
+    ALL_BENCHMARK_TIERS,
+    ReportTier,
+    ScenarioTier,
+    bench_codec,
+    build_report,
+)
 
 
 def test_bench_codec_smoke_s0() -> None:
@@ -92,6 +98,27 @@ def test_bench_codec_s3_smoke() -> None:
     )
     assert r["tier"] == "S3"
     assert r["s3_producer_batch"]["batch_size"] == 3
+
+
+def test_build_report_tier_all_merges_s0_through_s4() -> None:
+    report = build_report(
+        profiles=[PayloadProfile.small],
+        tier=cast(ReportTier, "all"),
+        formats=["json"],
+        compression=cast(CompressionAlg, "zstd"),
+        warmup=0,
+        iterations=1,
+        seed=5,
+        rubric_governance=None,
+        rubric_maintainability=None,
+        batch_size=4,
+    )
+    assert report["report_version"] == 9
+    assert report["scenario"]["tier"] == "all"
+    assert report["scenario"]["tiers_executed"] == list(ALL_BENCHMARK_TIERS)
+    assert len(report["results"]) == 5
+    tiers_in_rows = {str(r["tier"]) for r in report["results"]}
+    assert tiers_in_rows == set(ALL_BENCHMARK_TIERS)
 
 
 @pytest.mark.parametrize("tier", ["S0", "S1", "S2", "S3", "S4"])

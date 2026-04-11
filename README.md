@@ -23,7 +23,7 @@ ksp-bench run --scenario all --tier S0 --formats all --output-dir reports/
 ```
 
 - **Profiles:** `small`, `medium`, `large`, `evolution`, **`all`** (runs small+medium+large), or a **comma-separated** list (e.g. `small,medium`). Evolution uses Avro schema v1 → v2 when format is Avro.
-- **Tiers:** `S0` codec only; `S1` times **encode→compress** and **decompress→decode** with **`--compression gzip|zstd`** (levels: **`--s1-gzip-level`** / **`--s1-zstd-level`**, defaults 6 / 3). **`S2`** (Phase 6) runs a **loopback mock** Schema Registry (`GET /schemas/ids/{id}`) and times **cold** (new TCP per fetch) vs **warm** (HTTP keep-alive) plus encode/round-trip with a warm GET before serialize; use **`--registry-schema-id`**. **`S3` / `S4`** (Phase 7) add **in-memory** producer (`batch_size` encodes + `bytes.join`) or consumer (prefetched payloads, batch decode) paths—**no Kafka client or broker**; use **`--batch-size`**. Phase-3 **`--gzip-level` / `--zstd-level`** remain separate **size probes** on raw wire (S2/S3/S4 ignore compression for timed codec path).
+- **Tiers:** `S0` codec only; `S1` times **encode→compress** and **decompress→decode** with **`--compression gzip|zstd`** (levels: **`--s1-gzip-level`** / **`--s1-zstd-level`**, defaults 6 / 3). **`S2`** (Phase 6) runs a **loopback mock** Schema Registry (`GET /schemas/ids/{id}`) and times **cold** (new TCP per fetch) vs **warm** (HTTP keep-alive) plus encode/round-trip with a warm GET before serialize; use **`--registry-schema-id`**. **`S3` / `S4`** (Phase 7) add **in-memory** producer (`batch_size` encodes + `bytes.join`) or consumer (prefetched payloads, batch decode) paths—**no Kafka client or broker**; use **`--batch-size`**. Phase-3 **`--gzip-level` / `--zstd-level`** remain separate **size probes** on raw wire (S2/S3/S4 ignore compression for timed codec path). **`all`** runs **S0→S4** in one **`report.json`** (`report_version` **9**, `scenario.tiers_executed`, rows tagged per tier) so stack HTML has data under every tier tab.
 - **Formats:** `all` or comma-separated `avro,protobuf,json`. The CLI default is **`all`** (three codecs). If you pass e.g. **`--formats json`**, only that codec appears in `report.json` / `report.md`. Details: [Avro](#avro), [Protobuf](#protocol-buffers-protobuf).
 - **Wire sizes (Phase 3):** `--gzip-level`, `--zstd-level` control size probes; optional `--confluent-envelope` / `--confluent-prefix-bytes` for Kafka-shaped value totals (independent of S1 timing compression).
 
@@ -31,7 +31,7 @@ Rubrics under `rubrics/` are merged into `report.json` when those files exist (d
 
 Artifacts:
 
-- `report.json` — machine-readable results (`report_version` **8**: S3/S4 **`scenario.s3_s4`**, **`batch_size`**, per-row **`s3_producer_batch`** / **`s4_consumer_batch`**; v7 S2; v6 limitations / integrity / regression; v5 S1), environment, fixture checksum, `measurement` / `allocations`.
+- `report.json` — machine-readable results (`report_version` **9** when **`--tier all`**: merged S0–S4 rows + **`scenario.tiers_executed`**; **8** for a single tier: S3/S4 **`scenario.s3_s4`**, **`batch_size`**, per-row **`s3_producer_batch`** / **`s4_consumer_batch`**; v7 S2; v6 limitations / integrity / regression; v5 S1), environment, fixture checksum, `measurement` / `allocations`.
 - `report.md` — short human-readable summary, layer-cake notes, and Phase-8 appendix (limitations, artifact integrity, regression when enabled).
 
 Optional regression hints (same scenario fingerprint as the baseline `report.json`):
@@ -82,7 +82,7 @@ Use the [Makefile](Makefile) so local runs match CI. The first `make install` cr
 make install   # create .venv if needed, then editable install with dev extras
 make lint      # ruff, black --check, mypy (uses .venv)
 make test      # pytest + CLI smoke (same as CI)
-make report    # same as make test, then full-profile S0 benchmark + stack.html → reports/make-report/
+make report    # same as make test, then --tier all (S0–S4 in one report) + stack.html → reports/make-report/
 ```
 
 `make test` runs **`pytest`** then **`ksp-bench`** for **every tier (S0–S4)** with **`--scenario small,medium,large,evolution`**, **`--formats all`**, and **both** **`--compression zstd`** and **`--compression gzip`** (separate `/tmp/ksp-{tier}-{alg}/report.json` each). **S3/S4** passes **`--batch-size 8`**.
