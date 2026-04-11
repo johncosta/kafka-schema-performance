@@ -42,8 +42,14 @@ def benchmark_kafka_case(
     serialize: Callable[[], bytes],
     warmup_messages: int,
     timed_messages: int,
+    deserialize: Callable[[bytes], Any] | None = None,
 ) -> dict[str, Any]:
-    """Publish then read back messages; timed produce window excludes warmup."""
+    """Publish then read back messages; timed produce window excludes warmup.
+
+    When ``deserialize`` is set, an additional in-process loop times
+    ``deserialize(value_bytes)`` using the same wire bytes as produce—this is
+    **not** inside the Kafka consumer poll loop (see ``consume`` note).
+    """
 
     from kafka import KafkaConsumer, KafkaProducer
     from kafka.admin import KafkaAdminClient, NewTopic
@@ -79,6 +85,23 @@ def benchmark_kafka_case(
 
     value = serialize()
     value_len = len(value)
+
+    deserialize_block: dict[str, Any] | None = None
+    if deserialize is not None:
+        dec_n = max(20, warmup_messages)
+        t_d0 = time.perf_counter()
+        for _ in range(dec_n):
+            _ = deserialize(value)
+        t_d1 = time.perf_counter()
+        deserialize_mean_s = (t_d1 - t_d0) / dec_n
+        deserialize_block = {
+            "iterations": dec_n,
+            "mean_s": deserialize_mean_s,
+            "note": (
+                "In-process decode of the same value bytes used for produce; excludes "
+                "Kafka consumer poll/fetch and per-record decode inside poll."
+            ),
+        }
 
     try:
         producer = KafkaProducer(
@@ -172,6 +195,7 @@ def benchmark_kafka_case(
             "mean_s": serialize_mean_s,
             "note": "In-process codec.encode before broker send",
         },
+        **({"deserialize": deserialize_block} if deserialize_block else {}),
         "produce": {
             "messages": timed_messages,
             "wall_s": produce_wall_s,
@@ -227,11 +251,16 @@ def build_kafka_e2e_block(
                 "start; wall time covers polling until last record (decode of value "
                 "bytes not isolated from fetch loop)."
             ),
+            "deserialize": (
+                "Optional per-case block: in-process decode mean on the same value "
+                "bytes as produce, measured outside the consumer (see case.deserialize "
+                "when the benchmark passes a decode callback)."
+            ),
         },
         "roadmap": (
-            "Optional extensions (PRD §6.3.1): decode-only timing per message, "
-            "producer compression, linger/batch tuning, acks variants, keys/headers, "
-            "partitioned topics, async flush throughput."
+            "Optional extensions (PRD §6.3.1): producer compression, linger/batch "
+            "tuning, acks variants, keys/headers, partitioned topics, async flush "
+            "throughput, per-record decode inside consumer poll."
         ),
         "cases": cases,
     }

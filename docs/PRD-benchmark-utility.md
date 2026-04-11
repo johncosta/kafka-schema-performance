@@ -187,6 +187,7 @@ Reports should show **sensitivity**: e.g. ±20% payload size change impact on mo
 | Metric | Definition | Reporting |
 |--------|------------|-----------|
 | **Serialize (pre-broker)** | Mean wall time for in-process `encode` / `SerializeToString` over N iterations | Per-case `serialize.mean_s`; surfaced in **Markdown**, **summary.html**, **distributed.html** |
+| **Deserialize (in-process, optional)** | When the harness supplies a decode callback: mean wall time to materialize domain objects from the **same** `value_bytes` used for produce, measured **outside** the consumer poll loop | Per-case optional **`deserialize.mean_s`** (and `iterations`, `note`); HTML table adds a **Deserialize** column when any case includes this block |
 | **Produce (timed)** | Wall time for M synchronous or flushed sends of the **same pre-serialized value bytes** after warmup | `produce.wall_s`, `produce.mean_per_message_s`, **`produce.throughput_messages_per_s`**, **`produce.throughput_megabytes_per_s`** |
 | **Consume loop** | Wall time from partition assignment / seek through last polled record (warmup + timed) | `consume.wall_s`, `consume.mean_per_message_s`, **`consume.throughput_messages_per_s`**, **`consume.throughput_megabytes_per_s`** |
 | **Value bytes** | Length of serialized value used on the wire | `value_bytes` |
@@ -194,9 +195,9 @@ Reports should show **sensitivity**: e.g. ±20% payload size change impact on mo
 
 **Throughput definitions:** `throughput_megabytes_per_s` SHALL use `(value_bytes × messages_in_interval) / wall_seconds / (1024²)` for the same interval as the reported wall time (timed produce window uses timed message count only; consume window uses all messages read unless explicitly split in a future version).
 
-**Normative reporting (Section 7):** Any release that emits `kafka_e2e` SHALL render the block in **Markdown** (`report.md`), **summary.html**, and **distributed.html** with: bootstrap + broker label, client line, collapsible or appendix **producer/consumer config**, per-case table including **serialize**, **produce mean/msg**, **produce MB/s**, **consume mean/msg**, **consume MB/s**, and fine-print stating that **decode is not isolated** from the consume poll loop unless a future version adds a `decode` phase.
+**Normative reporting (Section 7):** Any release that emits `kafka_e2e` SHALL render the block in **Markdown** (`report.md`), **summary.html**, and **distributed.html** with: bootstrap + broker label, client line, collapsible or appendix **producer/consumer config**, per-case table including **serialize**, **produce mean/msg**, **produce MB/s**, **consume mean/msg**, **consume MB/s**, and fine-print stating that **decode inside the consumer poll loop** is not isolated from fetch/poll. When any case includes **`deserialize`**, the HTML table SHALL add a **Deserialize (mean)** column and Markdown SHALL list deserialize mean per case.
 
-**Roadmap (shall be documented in `kafka_e2e.roadmap` until implemented):** optional **decode-only** timing per message after fetch; **producer compression** (`compression_type`, levels); **linger / batch** tuning (`linger_ms`, `batch.size`); **acks** variants (`acks=1` vs `all`); **keys and headers** on records; **multi-partition** topics and assignment/rebalance cost; **async** produce + flush throughput. Each addition MUST update `kafka_e2e_version` or nested **scenario** metadata and the layer-cake / limitations narrative.
+**Roadmap (shall be documented in `kafka_e2e.roadmap` until implemented):** **producer compression** (`compression_type`, levels); **linger / batch** tuning (`linger_ms`, `batch.size`); **acks** variants (`acks=1` vs `all`); **keys and headers** on records; **multi-partition** topics and assignment/rebalance cost; **async** produce + flush throughput; **per-record decode** timing inside the consumer poll path. Each addition MUST update `kafka_e2e_version` or nested **scenario** metadata and the layer-cake / limitations narrative when semantics change.
 
 ### 6.4 Schema governance across teams
 
@@ -284,16 +285,16 @@ Provide a **narrow in-process** suite with deterministic inputs, **canned timing
 ### 7.3 Kafka `kafka_e2e` in machine-readable reports
 
 - **`report.json`:** Top-level **`kafka_e2e`** object with versioned schema, **`client`**, **`producer_config`**, **`consumer_config`**, **`phases`** (human-readable definitions), optional **`roadmap`** string for PRD §6.3.1 backlog, and **`cases[]`** (one object per codec × payload profile run).
-- **Each case** includes `serialize`, `produce`, and `consume` blocks with means, wall times where applicable, and **throughput** fields defined in Section 6.3.1.
+- **Each case** includes `serialize`, `produce`, and `consume` blocks with means, wall times where applicable, and **throughput** fields defined in Section 6.3.1; cases MAY include optional **`deserialize`** (in-process decode of produce bytes, Section 6.3.1).
 - **Missing block:** When no broker run is attached, omit `kafka_e2e`; viz and Markdown MUST omit Kafka sections without fabricating placeholders.
 
 ### 7.4 Kafka `kafka_e2e` in Markdown (`report.md`)
 
-- A dedicated **## Kafka-protocol end-to-end (kafka_e2e)** section SHALL appear after tier results (before rubrics) when the block is present, listing version, bootstrap, broker label, client library, **config snapshots**, phase definitions, and a **per-codec** bullet list including serialize mean and produce/consume throughput.
+- A dedicated **## Kafka-protocol end-to-end (kafka_e2e)** section SHALL appear after tier results (before rubrics) when the block is present, listing version, bootstrap, broker label, client library, **config snapshots**, phase definitions, and a **per-codec** bullet list including serialize mean, **deserialize mean** when the case includes **`deserialize`**, and produce/consume throughput.
 
 ### 7.5 Kafka `kafka_e2e` in HTML summary and distributed pages
 
-- **`summary.html`:** Kafka section SHALL include client line, **details** (or equivalent) with JSON **producer** and **consumer** config snapshots, optional roadmap fine-print, phase list, and a **widened matrix** (value bytes, serialize, produce mean/msg, **produce MB/s**, consume mean/msg, **consume MB/s**) plus fine-print on throughput methodology (Section 6.3.1).
+- **`summary.html`:** Kafka section SHALL include client line, **details** (or equivalent) with JSON **producer** and **consumer** config snapshots, optional roadmap fine-print, phase list, and a **widened matrix** (value bytes, serialize, optional **deserialize** when present on any case, produce mean/msg, **produce MB/s**, consume mean/msg, **consume MB/s**) plus fine-print on throughput methodology and deserialize semantics (Section 6.3.1).
 - **`distributed.html`:** SHALL reuse the same Kafka section renderer so footprint and broker-backed views stay consistent; CSS SHALL style embedded config `<pre>` blocks for readability.
 
 ---

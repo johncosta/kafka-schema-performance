@@ -420,6 +420,12 @@ def _kafka_e2e_section(report: dict[str, Any]) -> str:
         if lis:
             phase_ul = f"<ul>{''.join(lis)}</ul>"
     cases = block.get("cases")
+    show_deserialize = False
+    if isinstance(cases, list):
+        for c in cases:
+            if isinstance(c, dict) and isinstance(c.get("deserialize"), dict):
+                show_deserialize = True
+                break
     rows: list[str] = []
     if isinstance(cases, list):
         for c in cases:
@@ -429,6 +435,7 @@ def _kafka_e2e_section(report: dict[str, Any]) -> str:
             prof = html.escape(str(c.get("payload_profile", "?")))
             vb = c.get("value_bytes", "?")
             ser = c.get("serialize")
+            des = c.get("deserialize")
             pr = c.get("produce")
             co = c.get("consume")
             ser_m = ""
@@ -436,6 +443,11 @@ def _kafka_e2e_section(report: dict[str, Any]) -> str:
                 ms = ser.get("mean_s")
                 if isinstance(ms, (int, float)) and ms == ms:
                     ser_m = html.escape(f"{float(ms) * 1e6:.2f} µs")
+            des_m = "—"
+            if isinstance(des, dict):
+                dm = des.get("mean_s")
+                if isinstance(dm, (int, float)) and dm == dm:
+                    des_m = html.escape(f"{float(dm) * 1e6:.2f} µs")
             pr_m = ""
             pr_mb = "—"
             if isinstance(pr, dict):
@@ -450,25 +462,33 @@ def _kafka_e2e_section(report: dict[str, Any]) -> str:
                 if isinstance(mc, (int, float)) and mc == mc:
                     co_m = html.escape(f"{float(mc) * 1e3:.3f} ms/msg")
                 co_mb = _kafka_e2e_mb_s_cell(co, "throughput_megabytes_per_s")
-            rows.append(
-                "<tr>"
+            row_cells = (
                 f"<td><code>{codec}</code></td>"
                 f"<td>{prof}</td>"
                 f"<td>{html.escape(str(vb))}</td>"
                 f"<td>{ser_m or '—'}</td>"
+            )
+            if show_deserialize:
+                row_cells += f"<td>{des_m}</td>"
+            row_cells += (
                 f"<td>{pr_m or '—'}</td>"
                 f'<td class="num">{pr_mb}</td>'
                 f"<td>{co_m or '—'}</td>"
                 f'<td class="num">{co_mb}</td>'
-                "</tr>",
             )
-    thead = (
+            rows.append(f"<tr>{row_cells}</tr>")
+    thead_core = (
         "<tr><th>Codec</th><th>Profile</th><th>Value bytes</th>"
-        "<th>Serialize (mean)</th><th>Produce (mean/msg)</th>"
+        "<th>Serialize (mean)</th>"
+    )
+    thead_des = "<th>Deserialize (mean)</th>" if show_deserialize else ""
+    thead_tail = (
+        "<th>Produce (mean/msg)</th>"
         '<th class="num">Produce MB/s</th>'
         "<th>Consume (mean/msg)</th>"
         '<th class="num">Consume MB/s</th></tr>'
     )
+    thead = f"{thead_core}{thead_des}{thead_tail}"
     tbl = (
         '<table class="matrix"><thead>'
         f"{thead}</thead><tbody>{''.join(rows)}</tbody></table>"
@@ -476,8 +496,10 @@ def _kafka_e2e_section(report: dict[str, Any]) -> str:
     fine = (
         '<p class="fineprint">Broker-backed metrics are <strong>not</strong> '
         "tier S0–S4; they measure real Kafka-protocol I/O plus in-process "
-        "serialize. Throughput columns use value bytes × message counts over "
-        "the timed wall interval (consume includes warmup+timed messages). "
+        "serialize. Optional <strong>Deserialize</strong> column is in-process "
+        "decode of the produce value bytes, not inside the consumer poll loop. "
+        "Throughput columns use value bytes × message counts over the timed wall "
+        "interval (consume includes warmup+timed messages). "
         f"<code>kafka_e2e_version</code> {html.escape(str(ver))}.</p>"
     )
     return (

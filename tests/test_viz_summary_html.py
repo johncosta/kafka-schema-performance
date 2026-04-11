@@ -258,6 +258,7 @@ def test_build_summary_html_includes_kafka_e2e_section() -> None:
                     "payload_profile": "small",
                     "value_bytes": 10,
                     "serialize": {"mean_s": 1e-7},
+                    "deserialize": {"mean_s": 3e-7, "iterations": 20, "note": "n"},
                     "produce": {
                         "mean_per_message_s": 1e-4,
                         "throughput_megabytes_per_s": 0.01,
@@ -276,6 +277,7 @@ def test_build_summary_html_includes_kafka_e2e_section() -> None:
     assert "Produce MB/s" in html
     assert "cfg-pre" in html
     assert "producer_config" in html.lower() or "acks" in html
+    assert "Deserialize (mean)" in html
 
 
 def test_build_summary_html_includes_test_suite_ai_handoff() -> None:

@@ -45,11 +45,15 @@ def test_kafka_publish_consume_large_payload_all_codecs(
             serialize=_serialize_factory(codec, event),
             warmup_messages=5,
             timed_messages=15,
+            deserialize=codec.decode,
         )
         assert row["produce"]["messages"] == 15
         assert row["value_bytes"] > 0
         assert row["produce"]["wall_s"] > 0
         assert row["consume"]["wall_s"] > 0
+        des = row.get("deserialize")
+        assert isinstance(des, dict)
+        assert float(des["mean_s"]) > 0
         cases.append(row)
 
     broker = os.environ.get("KSP_KAFKA_BROKER_LABEL", "kafka_protocol")
@@ -96,5 +100,7 @@ def test_kafka_case_json_small_payload_smoke(kafka_bootstrap_servers: str) -> No
         serialize=_serialize_factory(codec, event),
         warmup_messages=2,
         timed_messages=5,
+        deserialize=codec.decode,
     )
     assert row["serialize"]["mean_s"] > 0
+    assert isinstance(row.get("deserialize"), dict)

@@ -119,6 +119,11 @@ def test_render_markdown_includes_kafka_e2e_section() -> None:
                 "warmup_messages": 1,
                 "timed_messages": 5,
                 "serialize": {"iterations": 20, "mean_s": 1e-6, "note": "n"},
+                "deserialize": {
+                    "iterations": 20,
+                    "mean_s": 2e-6,
+                    "note": "In-process decode.",
+                },
                 "produce": {
                     "messages": 5,
                     "wall_s": 0.01,
@@ -144,3 +149,4 @@ def test_render_markdown_includes_kafka_e2e_section() -> None:
     assert "Timed produce:" in md
     assert "MB/s" in md
     assert "Producer config (snapshot)" in md
+    assert "Deserialize mean (same value bytes, not in consumer poll)" in md

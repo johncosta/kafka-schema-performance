@@ -173,6 +173,14 @@ def append_kafka_e2e_markdown(lines: list[str], report: dict[str, Any]) -> None:
             ms = ser.get("mean_s")
             if isinstance(ms, (int, float)) and ms == ms:
                 lines.append(f"  - Serialize mean: {_fmt_sci(float(ms))} s")
+        des = c.get("deserialize")
+        if isinstance(des, dict):
+            dm = des.get("mean_s")
+            if isinstance(dm, (int, float)) and dm == dm:
+                lines.append(
+                    f"  - Deserialize mean (same value bytes, not in consumer poll): "
+                    f"{_fmt_sci(float(dm))} s",
+                )
         pr = c.get("produce")
         if isinstance(pr, dict):
             mpm = pr.get("mean_per_message_s")
