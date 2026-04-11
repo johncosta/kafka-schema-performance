@@ -6,7 +6,7 @@ import typer
 
 from benchmark.generate.records import PayloadProfile
 from benchmark.scenarios.runner import (
-    ScenarioTier,
+    ReportTier,
     build_report,
     write_report_bundle,
 )
@@ -85,7 +85,8 @@ def run_cmd(
         "-t",
         help=(
             "S0 codec; S1 codec+compression; S2 mock schema registry; "
-            "S3/S4 in-memory producer/consumer batch (no broker)"
+            "S3/S4 in-memory producer/consumer batch (no broker); "
+            "all = one report with rows for every tier (S0→S4)"
         ),
     ),
     formats: str = typer.Option(
@@ -194,9 +195,9 @@ def run_cmd(
     """Run benchmark matrix and write report.json (+ report.md)."""
 
     profiles = _parse_scenarios(scenario)
-    if tier not in ("S0", "S1", "S2", "S3", "S4"):
-        raise typer.BadParameter("tier must be S0, S1, S2, S3, or S4")
-    tier_t: ScenarioTier = tier  # type: ignore[assignment]
+    if tier not in ("S0", "S1", "S2", "S3", "S4", "all"):
+        raise typer.BadParameter("tier must be S0, S1, S2, S3, S4, or all")
+    tier_t: ReportTier = tier  # type: ignore[assignment]
     fmt_list = _parse_formats(formats)
     if tier in ("S0", "S2", "S3", "S4") and compression != "zstd":
         # allow but note compression unused for timed S0/S2/S3/S4 codec path
@@ -266,10 +267,39 @@ def viz_cmd(
         "-o",
         help="Self-contained HTML (stack flow + mean-time bars)",
     ),
+    summary: bool = typer.Option(
+        True,
+        "--summary/--no-summary",
+        help=(
+            "Also write conclusions HTML next to --output "
+            "(unless --summary-output is set)."
+        ),
+    ),
+    summary_output: Path | None = typer.Option(
+        None,
+        "--summary-output",
+        help="Path for conclusions HTML (default: <output-dir>/summary.html).",
+    ),
 ) -> None:
     """Encode→wire→decode stack diagram plus bar chart of mean times per component."""
 
     from benchmark.viz.stack_html import write_stack_visualization
+    from benchmark.viz.summary_html import write_summary_visualization
 
-    write_stack_visualization(report_json, output)
+    sum_path: Path | None = None
+    if summary:
+        sum_path = summary_output or (output.parent / "summary.html")
+
+    write_stack_visualization(
+        report_json,
+        output,
+        companion_summary_path=sum_path,
+    )
     typer.echo(f"Wrote {output}")
+    if summary and sum_path is not None:
+        write_summary_visualization(
+            report_json,
+            sum_path,
+            companion_stack_path=output,
+        )
+        typer.echo(f"Wrote {sum_path}")

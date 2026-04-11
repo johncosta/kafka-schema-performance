@@ -42,6 +42,10 @@ from benchmark.report.regression import regression_check_against_baseline_file
 from benchmark.report.render import render_markdown
 
 ScenarioTier = Literal["S0", "S1", "S2", "S3", "S4"]
+# ``all`` runs S0→S4 sequentially and merges rows (one ``report.json``).
+ReportTier = Literal["S0", "S1", "S2", "S3", "S4", "all"]
+
+ALL_BENCHMARK_TIERS: tuple[ScenarioTier, ...] = ("S0", "S1", "S2", "S3", "S4")
 
 MEASUREMENT_MODEL: dict[str, Any] = {
     "timer": "time.perf_counter (wall time per iteration)",
@@ -152,6 +156,12 @@ def _select_codec(fmt: str, profile: PayloadProfile) -> Codec:
     if fmt == "json":
         return JsonCodec()
     raise ValueError(f"unknown format: {fmt!r}")
+
+
+def codec_for_profile(fmt: str, profile: PayloadProfile) -> Codec:
+    """Public helper: benchmark codec for ``fmt`` and payload profile."""
+
+    return _select_codec(fmt, profile)
 
 
 def _bench_codec_s2(
@@ -817,7 +827,7 @@ def embed_rubric(path: str) -> dict[str, Any]:
 def build_report(
     *,
     profiles: list[PayloadProfile],
-    tier: ScenarioTier,
+    tier: ReportTier,
     formats: list[str],
     compression: CompressionAlg,
     warmup: int,
@@ -837,37 +847,43 @@ def build_report(
     registry_schema_id: int = 1,
     batch_size: int = 64,
 ) -> dict[str, Any]:
+    if tier == "all":
+        tiers_loop = ALL_BENCHMARK_TIERS
+    else:
+        tiers_loop = (tier,)
+
     mock_registry: MockRegistryServer | None = None
-    if tier == "S2":
+    if "S2" in tiers_loop:
         mock_registry = MockRegistryServer.start(schema_id=registry_schema_id)
 
     rows: list[dict[str, Any]] = []
     try:
-        for profile in profiles:
-            event = sample_event(profile, seed)
-            for fmt in formats:
-                codec = _select_codec(fmt, profile)
-                row = bench_codec(
-                    codec,
-                    event,
-                    tier=tier,
-                    compression=compression,
-                    warmup=warmup,
-                    iterations=iterations,
-                    tracemalloc_sample=tracemalloc_sample,
-                    gzip_level=gzip_level,
-                    zstd_level=zstd_level,
-                    include_confluent_envelope=include_confluent_envelope,
-                    confluent_prefix_bytes=confluent_prefix_bytes,
-                    s1_gzip_level=s1_gzip_level,
-                    s1_zstd_level=s1_zstd_level,
-                    registry_host=mock_registry.host if mock_registry else "",
-                    registry_port=mock_registry.port if mock_registry else 0,
-                    registry_schema_id=registry_schema_id,
-                    batch_size=batch_size,
-                )
-                row["payload_profile"] = profile.value
-                rows.append(row)
+        for run_tier in tiers_loop:
+            for profile in profiles:
+                event = sample_event(profile, seed)
+                for fmt in formats:
+                    codec = _select_codec(fmt, profile)
+                    row = bench_codec(
+                        codec,
+                        event,
+                        tier=run_tier,
+                        compression=compression,
+                        warmup=warmup,
+                        iterations=iterations,
+                        tracemalloc_sample=tracemalloc_sample,
+                        gzip_level=gzip_level,
+                        zstd_level=zstd_level,
+                        include_confluent_envelope=include_confluent_envelope,
+                        confluent_prefix_bytes=confluent_prefix_bytes,
+                        s1_gzip_level=s1_gzip_level,
+                        s1_zstd_level=s1_zstd_level,
+                        registry_host=mock_registry.host if mock_registry else "",
+                        registry_port=mock_registry.port if mock_registry else 0,
+                        registry_schema_id=registry_schema_id,
+                        batch_size=batch_size,
+                    )
+                    row["payload_profile"] = profile.value
+                    rows.append(row)
     finally:
         if mock_registry is not None:
             mock_registry.stop()
@@ -882,7 +898,7 @@ def build_report(
         "timed_iterations": iterations,
         "seed": seed,
         "compression": compression,
-        "batch_size": batch_size if tier in ("S3", "S4") else None,
+        "batch_size": (batch_size if tier == "all" or tier in ("S3", "S4") else None),
         "size_and_cost": {
             "gzip_compresslevel": gzip_level,
             "zstd_level": zstd_level,
@@ -892,7 +908,9 @@ def build_report(
             ),
         },
     }
-    if tier == "S1":
+    if tier == "all":
+        scenario_block["tiers_executed"] = list(ALL_BENCHMARK_TIERS)
+    if tier == "all" or tier == "S1":
         scenario_block["s1"] = {
             "timed_compression_algorithm": compression,
             "gzip_level_cli": s1_gzip_level,
@@ -904,7 +922,7 @@ def build_report(
                 "size_and_cost gzip/zstd are separate probes on raw wire."
             ),
         }
-    if tier == "S2":
+    if tier == "all" or tier == "S2":
         scenario_block["s2"] = {
             "registry_implementation": "MockRegistryServer",
             "bind": "127.0.0.1 (ephemeral port per run)",
@@ -915,7 +933,7 @@ def build_report(
                 "environment-specific, not real SR latency."
             ),
         }
-    if tier in ("S3", "S4"):
+    if tier == "all" or tier in ("S3", "S4"):
         scenario_block["s3_s4"] = {
             "batch_size": batch_size,
             "implementation": "memory_queue_only",
@@ -925,8 +943,9 @@ def build_report(
             ),
         }
 
+    report_version = 9 if tier == "all" else 8
     report: dict[str, Any] = {
-        "report_version": 8,
+        "report_version": report_version,
         "scenario": scenario_block,
         "measurement": MEASUREMENT_MODEL,
         "environment": collect_environment(),

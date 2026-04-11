@@ -5,8 +5,11 @@ from typing import Any
 
 
 def _scenario_fingerprint(scenario: dict[str, Any]) -> tuple[Any, ...]:
+    te = scenario.get("tiers_executed")
+    te_t = tuple(te) if isinstance(te, list) else ()
     return (
         scenario.get("tier"),
+        te_t,
         scenario.get("seed"),
         tuple(scenario.get("payload_profiles", [])),
         tuple(scenario.get("formats", [])),
@@ -16,16 +19,17 @@ def _scenario_fingerprint(scenario: dict[str, Any]) -> tuple[Any, ...]:
     )
 
 
-def _rows_by_key(results: list[dict[str, Any]]) -> dict[tuple[str, str], float]:
-    out: dict[tuple[str, str], float] = {}
+def _rows_by_key(results: list[dict[str, Any]]) -> dict[tuple[str, str, str], float]:
+    out: dict[tuple[str, str, str], float] = {}
     for row in results:
         prof = str(row.get("payload_profile", ""))
         codec = str(row.get("codec", ""))
+        tr = str(row.get("tier", ""))
         rt = row.get("round_trip")
         if isinstance(rt, dict) and "mean_s" in rt:
             mean = float(rt["mean_s"])
             if mean == mean:  # not NaN
-                out[(prof, codec)] = mean
+                out[(prof, codec, tr)] = mean
     return out
 
 
@@ -38,8 +42,9 @@ def regression_check_against_baseline_file(
     """
     Optional Phase-8 regression hints: warn if round_trip.mean_s worsens vs baseline.
 
-    Baseline must match tier, seed, payload_profiles, formats, compression,
-    timed_iterations, and batch_size (S3/S4) so comparisons are apples-to-apples.
+    Baseline must match tier, tiers_executed (when present), seed,
+    payload_profiles, formats, compression, timed_iterations, and batch_size
+    (S3/S4 / all-tiers) so comparisons are apples-to-apples.
     """
 
     try:
@@ -71,8 +76,9 @@ def regression_check_against_baseline_file(
         return {
             "skipped": True,
             "reason": (
-                "scenario fingerprint mismatch (tier, seed, profiles, formats, "
-                "compression, timed_iterations, or batch_size differ)"
+                "scenario fingerprint mismatch (tier, tiers_executed, seed, "
+                "profiles, formats, compression, timed_iterations, or "
+                "batch_size differ)"
             ),
             "baseline_path": baseline_path,
             "current_fingerprint": _scenario_fingerprint(cur_scen),
@@ -93,7 +99,8 @@ def regression_check_against_baseline_file(
     for row in cur_results:
         prof = str(row.get("payload_profile", ""))
         codec = str(row.get("codec", ""))
-        key = (prof, codec)
+        tr = str(row.get("tier", ""))
+        key = (prof, codec, tr)
         if key not in base_map:
             continue
         rt = row.get("round_trip")
@@ -111,6 +118,7 @@ def regression_check_against_baseline_file(
                 {
                     "payload_profile": prof,
                     "codec": codec,
+                    "tier": tr,
                     "baseline_round_trip_mean_s": base_mean,
                     "current_round_trip_mean_s": cur_mean,
                     "warn_ratio": warn_ratio,

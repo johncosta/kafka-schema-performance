@@ -122,17 +122,26 @@ def render_markdown(report: dict[str, Any]) -> str:
         "",
         f"- **Payload profile(s):** {', '.join(profile_labels)}",
         f"- **Tier:** {scen['tier']} (see layer cake per result)",
-        f"- **Formats:** {', '.join(scen['formats'])}",
-        f"- **Timed iterations:** {scen['timed_iterations']} "
-        f"(warmup {scen['warmup_iterations']})",
-        f"- **Seed:** {scen['seed']}",
-        "",
     ]
+    te = scen.get("tiers_executed")
+    if isinstance(te, list) and te:
+        joined = ", ".join(str(x) for x in te)
+        lines.append(f"- **Tiers executed (single report):** {joined}")
+        lines.append("")
+    lines.extend(
+        [
+            f"- **Formats:** {', '.join(scen['formats'])}",
+            f"- **Timed iterations:** {scen['timed_iterations']} "
+            f"(warmup {scen['warmup_iterations']})",
+            f"- **Seed:** {scen['seed']}",
+            "",
+        ],
+    )
     if scen.get("batch_size") is not None:
         lines.append(f"- **Batch size:** {scen['batch_size']}")
         lines.append("")
     s1_scen = scen.get("s1")
-    if scen.get("tier") == "S1" and isinstance(s1_scen, dict):
+    if isinstance(s1_scen, dict) and scen.get("tier") in ("S1", "all"):
         lines.extend(
             [
                 "### Tier S1 (codec + compression)",
@@ -152,7 +161,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             ]
         )
     s2_scen = scen.get("s2")
-    if scen.get("tier") == "S2" and isinstance(s2_scen, dict):
+    if isinstance(s2_scen, dict) and scen.get("tier") in ("S2", "all"):
         lines.extend(
             [
                 "### Tier S2 (codec + mock schema registry)",
@@ -170,7 +179,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         )
     s34 = scen.get("s3_s4")
     t34 = scen.get("tier")
-    if t34 == "S3" and isinstance(s34, dict):
+    if isinstance(s34, dict) and t34 in ("S3", "all"):
         lines.extend(
             [
                 "### Tier S3 (memory producer batch)",
@@ -181,7 +190,7 @@ def render_markdown(report: dict[str, Any]) -> str:
                 "",
             ]
         )
-    if t34 == "S4" and isinstance(s34, dict):
+    if isinstance(s34, dict) and t34 in ("S4", "all"):
         lines.extend(
             [
                 "### Tier S4 (memory consumer batch)",
@@ -255,7 +264,13 @@ def render_markdown(report: dict[str, Any]) -> str:
         ]
     )
     results = list(report["results"])
-    results.sort(key=lambda r: (r.get("payload_profile", ""), r.get("codec", "")))
+    results.sort(
+        key=lambda r: (
+            str(r.get("payload_profile", "")),
+            str(r.get("codec", "")),
+            str(r.get("tier", "")),
+        ),
+    )
 
     lines.append("## Results")
     lines.append("")
@@ -270,9 +285,11 @@ def render_markdown(report: dict[str, Any]) -> str:
             enc = row["encode"]
             dec = row["decode"]
             rt = row["round_trip"]
+            tier_lbl = str(row.get("tier", ""))
+            tier_suffix = f" — `{tier_lbl}`" if tier_lbl else ""
             lines.extend(
                 [
-                    f"#### {row['codec']}",
+                    f"#### {row['codec']}{tier_suffix}",
                     "",
                     f"- Raw size (bytes): {row['raw_size_bytes']}",
                     f"- Compressed size (bytes): {row['compressed_size_bytes']}",

@@ -11,8 +11,20 @@ Benchmark harness comparing **Apache Avro**, **Protocol Buffers**, and **JSON** 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[dev,kafka]"
 ```
+
+Optional **Kafka-protocol** end-to-end timings (publish + read back serialized payloads) use the **`[kafka]`** extra (`kafka-python-ng`, Testcontainers). They attach a **`kafka_e2e`** block to `report.json` and appear in **`summary.html`** when present. Local broker:
+
+```bash
+pip install -e ".[dev,kafka]"
+docker compose -f docker/docker-compose.kafka.yml up -d
+export KSP_KAFKA_BOOTSTRAP=127.0.0.1:19092
+pytest tests/integration -m kafka -v
+# or: make test-kafka
+```
+
+Without **`KSP_KAFKA_BOOTSTRAP`** (and without **`KSP_USE_TESTCONTAINERS=1`**), `@pytest.mark.kafka` tests **skip** so default `pytest` stays fast. Redpanda in compose is **Kafka API–compatible**; metrics are labeled via **`KSP_KAFKA_BROKER_LABEL`** (optional).
 
 ## Run benchmarks
 
@@ -23,7 +35,7 @@ ksp-bench run --scenario all --tier S0 --formats all --output-dir reports/
 ```
 
 - **Profiles:** `small`, `medium`, `large`, `evolution`, **`all`** (runs small+medium+large), or a **comma-separated** list (e.g. `small,medium`). Evolution uses Avro schema v1 → v2 when format is Avro.
-- **Tiers:** `S0` codec only; `S1` times **encode→compress** and **decompress→decode** with **`--compression gzip|zstd`** (levels: **`--s1-gzip-level`** / **`--s1-zstd-level`**, defaults 6 / 3). **`S2`** (Phase 6) runs a **loopback mock** Schema Registry (`GET /schemas/ids/{id}`) and times **cold** (new TCP per fetch) vs **warm** (HTTP keep-alive) plus encode/round-trip with a warm GET before serialize; use **`--registry-schema-id`**. **`S3` / `S4`** (Phase 7) add **in-memory** producer (`batch_size` encodes + `bytes.join`) or consumer (prefetched payloads, batch decode) paths—**no Kafka client or broker**; use **`--batch-size`**. Phase-3 **`--gzip-level` / `--zstd-level`** remain separate **size probes** on raw wire (S2/S3/S4 ignore compression for timed codec path).
+- **Tiers:** `S0` codec only; `S1` times **encode→compress** and **decompress→decode** with **`--compression gzip|zstd`** (levels: **`--s1-gzip-level`** / **`--s1-zstd-level`**, defaults 6 / 3). **`S2`** (Phase 6) runs a **loopback mock** Schema Registry (`GET /schemas/ids/{id}`) and times **cold** (new TCP per fetch) vs **warm** (HTTP keep-alive) plus encode/round-trip with a warm GET before serialize; use **`--registry-schema-id`**. **`S3` / `S4`** (Phase 7) add **in-memory** producer (`batch_size` encodes + `bytes.join`) or consumer (prefetched payloads, batch decode) paths—**no Kafka client or broker**; use **`--batch-size`**. Phase-3 **`--gzip-level` / `--zstd-level`** remain separate **size probes** on raw wire (S2/S3/S4 ignore compression for timed codec path). **`all`** runs **S0→S4** in one **`report.json`** (`report_version` **9**, `scenario.tiers_executed`, rows tagged per tier) so stack HTML has data under every tier tab.
 - **Formats:** `all` or comma-separated `avro,protobuf,json`. The CLI default is **`all`** (three codecs). If you pass e.g. **`--formats json`**, only that codec appears in `report.json` / `report.md`. Details: [Avro](#avro), [Protobuf](#protocol-buffers-protobuf).
 - **Wire sizes (Phase 3):** `--gzip-level`, `--zstd-level` control size probes; optional `--confluent-envelope` / `--confluent-prefix-bytes` for Kafka-shaped value totals (independent of S1 timing compression).
 
@@ -31,7 +43,7 @@ Rubrics under `rubrics/` are merged into `report.json` when those files exist (d
 
 Artifacts:
 
-- `report.json` — machine-readable results (`report_version` **8**: S3/S4 **`scenario.s3_s4`**, **`batch_size`**, per-row **`s3_producer_batch`** / **`s4_consumer_batch`**; v7 S2; v6 limitations / integrity / regression; v5 S1), environment, fixture checksum, `measurement` / `allocations`.
+- `report.json` — machine-readable results (`report_version` **9** when **`--tier all`**: merged S0–S4 rows + **`scenario.tiers_executed`**; **8** for a single tier: S3/S4 **`scenario.s3_s4`**, **`batch_size`**, per-row **`s3_producer_batch`** / **`s4_consumer_batch`**; v7 S2; v6 limitations / integrity / regression; v5 S1), environment, fixture checksum, `measurement` / `allocations`.
 - `report.md` — short human-readable summary, layer-cake notes, and Phase-8 appendix (limitations, artifact integrity, regression when enabled).
 
 Optional regression hints (same scenario fingerprint as the baseline `report.json`):
@@ -40,11 +52,12 @@ Optional regression hints (same scenario fingerprint as the baseline `report.jso
 ksp-bench run --scenario small --formats json --baseline-report reports/prior/report.json
 ```
 
-**Stack visualization:** turn a `report.json` into a self-contained HTML page (conceptual encode → wire → decode flow, plus horizontal bars of **mean** time per measured component—including S2 registry fetches or S3/S4 batch rows when the report includes them). The page header lists **profiles**, **formats**, and **scenario compression**; each result shows **Phase-3 gzip and zstd** wire-size probe totals from `compressed_payload_bytes`, and **S1** rows add the **timed compressed** byte length.
+**Stack visualization:** turn a `report.json` into a self-contained HTML page (conceptual encode → wire → decode flow, plus horizontal bars of **mean** time per measured component—including S2 registry fetches or S3/S4 batch rows when the report includes them). **Top-level tabs are always all benchmark tiers** (S0–S4); only the scenario tier (and any other tier present in `results`) has data, the rest show a short empty state. Inside a tier, **payload profile** tabs group codecs. A collapsible **What do benchmark tiers mean?** block defines S0–S4. The header lists **scenario tier**, **profiles**, **formats**, and **scenario compression**; each result shows **Phase-3 gzip and zstd** probe totals from `compressed_payload_bytes`, and **S1** rows add the **timed compressed** byte length. **Time bars** share a **common width scale per metric** (e.g. all “Encode” bars use the same maximum across the report) so you can compare codecs and profiles visually. A companion **`summary.html`** (same `viz` command) adds an **aggregate win-rate table** (% of comparisons where each codec was fastest or smallest, with ties split), **headline conclusions**, **tier × profile** comparison tables with best-per-metric highlights, and surfaces **regression** and **limitations** text from the JSON.
 
 ```bash
 ksp-bench viz reports/report.json -o reports/stack.html
-# then open reports/stack.html in a browser
+# also writes reports/summary.html (conclusions + comparison tables); use --no-summary to skip
+# the two pages cross-link for navigation; open either in a browser
 ```
 
 ## Avro
@@ -81,11 +94,11 @@ Use the [Makefile](Makefile) so local runs match CI. The first `make install` cr
 ```bash
 make install   # create .venv if needed, then editable install with dev extras
 make lint      # ruff, black --check, mypy (uses .venv)
-make test      # pytest + CLI smoke (same as CI)
-make report    # same as make test, then full-profile S0 benchmark + stack.html → reports/make-report/
+make test      # Docker Redpanda → full pytest (incl. Kafka E2E) → CLI smoke (same as CI)
+make report    # same as make test, then --tier all (S0–S4 in one report) + stack.html → reports/make-report/
 ```
 
-`make test` runs **`ksp-bench`** with **`--formats all`**: **S0** uses all payload profiles (`small`–`evolution`), **S1** runs twice (**`zstd`** and **`gzip`**), and **S2**–**S4** use short **`json`** smokes. Outputs land under `/tmp/ksp-report`, `/tmp/ksp-s1-zstd`, `/tmp/ksp-s1-gzip`, `/tmp/ksp-s2`, `/tmp/ksp-s3`, and `/tmp/ksp-s4`.
+`make test` starts **Docker Compose** (`docker/docker-compose.kafka.yml`, Redpanda on **127.0.0.1:19092**), runs the **full `pytest`** suite (including **`@pytest.mark.distributed`** in-process checks and **`@pytest.mark.kafka`** broker tests with **`KSP_KAFKA_BOOTSTRAP`**), tears the broker down, then runs **`ksp-bench`** for **every tier (S0–S4)** with **`--scenario small,medium,large,evolution`**, **`--formats all`**, and **both** **`--compression zstd`** and **`--compression gzip`** (separate `/tmp/ksp-{tier}-{alg}/report.json` each). **S3/S4** passes **`--batch-size 8`**. **Docker** is required for `make test` / CI.
 
 To use another Python for creating the venv, run `python3.12 -m venv .venv` yourself, then `make install` (the existing `.venv` is reused).
 
@@ -95,7 +108,11 @@ Manual equivalents:
 ruff check src tests
 black src tests
 mypy src
-pytest -q
+# Full suite locally (same env vars as make test):
+docker compose -f docker/docker-compose.kafka.yml up -d
+.venv/bin/python scripts/wait_for_tcp.py --host 127.0.0.1 --port 19092
+KSP_KAFKA_BOOTSTRAP=127.0.0.1:19092 pytest -q
+docker compose -f docker/docker-compose.kafka.yml down
 ```
 
 ## Scope limits (today)

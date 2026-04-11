@@ -1,0 +1,27 @@
+# Kafka-protocol broker for integration / E2E benchmarks (not used by default pytest).
+# Redpanda is Kafka API–compatible; use for local `make test-kafka`.
+#
+#   docker compose -f docker/docker-compose.kafka.yml up -d
+#   export KSP_KAFKA_BOOTSTRAP=127.0.0.1:19092
+#   pytest tests/integration -m kafka -v
+#
+services:
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.11
+    container_name: ksp-redpanda
+    command:
+      - redpanda
+      - start
+      - --kafka-addr
+      - internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - internal://redpanda:9092,external://127.0.0.1:19092
+      - --smp
+      - "1"
+      - --memory
+      - 512M
+      - --mode
+      - dev-container
+      - --default-log-level=warn
+    ports:
+      - "19092:19092"

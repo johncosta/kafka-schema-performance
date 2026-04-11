@@ -110,7 +110,7 @@ Versioned JSON schema or Pydantic models for:
 - CLI stub: `run --scenario small --formats all --tier S0 --output-dir reports/`.
 - **Reproducibility:** collect versions; fail or warn if critical metadata missing (configurable).
 - **CI:** lint + typecheck + unit tests on **non-benchmark** code (generators, report merge, checksums).
-- **Makefile:** `make install`, `make lint`, `make test` (GitHub Actions runs the same targets). Local `make install` creates **`.venv`** and installs there (PEP 668–safe on Homebrew Python).
+- **Makefile:** `make install`, `make lint`, `make test` (GitHub Actions runs the same targets). `make install` uses **`.[dev,kafka]`**; **`make test`** starts **Docker** Redpanda, runs **full pytest** (including Kafka E2E), tears the broker down, then **`ksp-bench`** tier smokes. Local `make install` creates **`.venv`** and installs there (PEP 668–safe on Homebrew Python).
 - **Pre-commit or CI:** format (e.g. black/ruff format).
 
 **Exit:** CI green; `run --help` works; empty or placeholder report structure validates.
@@ -182,7 +182,7 @@ Versioned JSON schema or Pydantic models for:
 - **S4:** Consumer-style loop: prefetched bytes → deserialize batch; isolate broker fetch if possible.
 - Run in **optional** CI or manual nightly; pin broker + client versions.
 
-**Delivered:** **`--tier S3`** runs **single-record S0 reference** timings plus **`s3_producer_batch`**: per iteration, `batch_size` encodes + **`bytes.join`** as a flush proxy (no Kafka client, no broker). **`--tier S4`** keeps S0 reference rows plus **`s4_consumer_batch`**: prefetched encoded payloads, timed full-batch decode per iteration. CLI **`--batch-size`**; **`scenario.batch_size`** and **`scenario.s3_s4`**; **`measurement.tier_s3_s4_memory`**; layer cake excludes real broker/clients. Regression fingerprint includes **`batch_size`**. **`report_version` 8**. CI smoke runs **S3** and **S4** once each (low iterations).
+**Delivered:** **`--tier S3`** runs **single-record S0 reference** timings plus **`s3_producer_batch`**: per iteration, `batch_size` encodes + **`bytes.join`** as a flush proxy (no Kafka client, no broker). **`--tier S4`** keeps S0 reference rows plus **`s4_consumer_batch`**: prefetched encoded payloads, timed full-batch decode per iteration. CLI **`--batch-size`**; **`scenario.batch_size`** and **`scenario.s3_s4`**; **`measurement.tier_s3_s4_memory`**; layer cake excludes real broker/clients. Regression fingerprint includes **`batch_size`**. **`report_version` 8**. CI smoke runs **S3** and **S4** once each (low iterations). **`--tier all`** merges S0→S4 into one report (**`report_version` 9**, **`scenario.tiers_executed`**, per-row **`tier`**); regression fingerprint adds **`tiers_executed`**; Markdown and stack viz show every tier with data.
 
 **Exit:** Layer cake states “real broker” vs “memory queue”; no default dependency for MVP developers.
 
@@ -205,8 +205,10 @@ Versioned JSON schema or Pydantic models for:
 | **Generators** | Determinism from seed; field bounds; evolution variants. |
 | **Codecs** | Golden round-trips; evolution case behavior. |
 | **Stats** | Percentile helper against known tiny sample; monotonicity sanity. |
-| **Report** | Snapshot or schema validation of JSON output; Markdown contains tier labels. |
-| **Visualization** | `ksp-bench viz report.json -o stack.html` — HTML stack flow + mean-time bars from JSON (encode/decode/round-trip; S2/S3/S4 extras when present). Summary lists **tier**, **payload profiles**, **formats**, **scenario compression** (S1 timed algorithm), and **iterations**. Each row adds **Phase-3 gzip and zstd** wire-size probe totals (always in `report.json`) and, for **S1**, the **timed compressed wire** byte length. |
+| **Report** | `build_report` exhaustive matrix test: all payload profiles × `avro/protobuf/json` × tiers S0–S4 × `gzip/zstd` scenario compression (minimal iterations). `make test` CLI smokes repeat that matrix via `ksp-bench`. Markdown contains tier labels. |
+| **Distributed-style proxy** | `tests/test_distributed_performance.py` — `@pytest.mark.distributed`: **large** / **medium** wire (S0) and **S1** compressed size where JSON is larger than Avro/Protobuf on fixtures (in-process only). |
+| **Kafka E2E** | `docker/docker-compose.kafka.yml` (Redpanda, Kafka protocol). **`make test`** brings the broker up and sets **`KSP_KAFKA_BOOTSTRAP`** for the full pytest run; **`make test-kafka`** runs only **`pytest tests/integration -m kafka`**. `tests/integration/` — `@pytest.mark.kafka`: synchronous produce + consume via `kafka-python-ng`; metrics as **`kafka_e2e`** in `report.json`. **Summary HTML** renders a Kafka section when that key exists. Ad-hoc Testcontainers if **`KSP_USE_TESTCONTAINERS=1`** (no compose). |
+| **Visualization** | `ksp-bench viz report.json -o stack.html` — HTML stack flow + mean-time bars from JSON (encode/decode/round-trip; S2/S3/S4 extras when present). **Five tier tabs** (S0–S4) always; empty tiers show a note referencing the scenario tier. **Profile tabs** inside tiers that have rows; glossary explains tiers. Summary lists **scenario tier**, **profiles**, **formats**, **scenario compression**, **iterations**; rows add **Phase-3 gzip/zstd** probes and **S1** timed compressed sizes. **Same command** writes **`summary.html`** (default, next to `-o`): **aggregate codec win %** across all tier×profile metric head-to-heads (fastest time or smallest bytes; ties split), headline bullets when round-trip spread exceeds a threshold, per **tier × profile** comparison tables (best-per-column highlights, optional S1 compressed / S3 / S4 columns), **regression_check** warnings, and **limitations** text—use `--no-summary` or `--summary-output` to override. |
 | **Benchmarks** | Not run in default CI (noisy); optional scheduled job or `--quick` smoke (few iterations). |
 
 ---
