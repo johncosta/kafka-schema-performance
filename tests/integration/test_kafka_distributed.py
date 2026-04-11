@@ -58,7 +58,9 @@ def test_kafka_publish_consume_large_payload_all_codecs(
         broker_implementation=broker,
         cases=cases,
     )
-    assert block["kafka_e2e_version"] == 1
+    assert block["kafka_e2e_version"] == 2
+    assert "producer_config" in block
+    assert "throughput_megabytes_per_s" in block["cases"][0]["produce"]
     assert len(block["cases"]) == 3
 
     report: dict[str, Any] = {

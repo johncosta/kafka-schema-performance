@@ -244,18 +244,28 @@ def test_build_summary_html_includes_kafka_e2e_section() -> None:
             _row(tier="S0", profile="small", codec="json", enc=1e-6, dec=1e-6, rt=1e-6),
         ],
         "kafka_e2e": {
-            "kafka_e2e_version": 1,
+            "kafka_e2e_version": 2,
             "broker_implementation": "test",
             "bootstrap_servers": "127.0.0.1:19092",
+            "client": {"library": "kafka-python", "api_version": [2, 8, 1]},
+            "producer_config": {"acks": "all"},
+            "consumer_config": {"enable_auto_commit": False},
             "phases": {"produce": "sync send"},
+            "roadmap": "Optional decode split (PRD).",
             "cases": [
                 {
                     "codec": "json",
                     "payload_profile": "small",
                     "value_bytes": 10,
                     "serialize": {"mean_s": 1e-7},
-                    "produce": {"mean_per_message_s": 1e-4},
-                    "consume": {"mean_per_message_s": 2e-4},
+                    "produce": {
+                        "mean_per_message_s": 1e-4,
+                        "throughput_megabytes_per_s": 0.01,
+                    },
+                    "consume": {
+                        "mean_per_message_s": 2e-4,
+                        "throughput_megabytes_per_s": 0.02,
+                    },
                 },
             ],
         },
@@ -263,6 +273,9 @@ def test_build_summary_html_includes_kafka_e2e_section() -> None:
     html = build_summary_html(report)
     assert "Kafka-protocol end-to-end" in html
     assert "127.0.0.1:19092" in html
+    assert "Produce MB/s" in html
+    assert "cfg-pre" in html
+    assert "producer_config" in html.lower() or "acks" in html
 
 
 def test_build_summary_html_includes_test_suite_ai_handoff() -> None:

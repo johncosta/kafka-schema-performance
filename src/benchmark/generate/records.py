@@ -10,6 +10,7 @@ class PayloadProfile(StrEnum):
     small = "small"
     medium = "medium"
     large = "large"
+    map_heavy = "map_heavy"
     evolution = "evolution"
 
 
@@ -56,6 +57,25 @@ def sample_event(profile: PayloadProfile, seed: int) -> AnalyticsEvent:
             props=props,
             context=context,
             payload_blob=payload_blob,
+        )
+    if profile is PayloadProfile.map_heavy:
+        n_props = 96
+        heavy_props = {
+            f"k{i:03d}": f"v{rng.randint(0, 9_999_999):07d}" for i in range(n_props)
+        }
+        n_tags = 72
+        tags = tuple(f"tag{n:04d}={rng.getrandbits(24):06x}" for n in range(n_tags))
+        context = EventContext(
+            device_id=f"dev_map_{rng.getrandbits(40):010x}",
+            session_id=f"sess_map_{rng.getrandbits(48):012x}",
+            tags=tags,
+        )
+        return AnalyticsEvent(
+            event_id=event_id,
+            ts_ms=ts_ms,
+            user_id=user_id,
+            props=heavy_props,
+            context=context,
         )
     # evolution: same shape as small; Avro uses v1 writer without new_field
     return AnalyticsEvent(
@@ -115,6 +135,24 @@ def golden_large_event() -> AnalyticsEvent:
             tags=("t1", "t2"),
         ),
         payload_blob=_golden_large_payload_blob(),
+    )
+
+
+def golden_map_heavy_event() -> AnalyticsEvent:
+    """Fixed map/array-heavy record (PRD §6.6.2 payload diversity)."""
+
+    props = {f"mk{i:02d}": f"mv{i:04d}" for i in range(28)}
+    tags = tuple(f"t{i:03d}" for i in range(24))
+    return AnalyticsEvent(
+        event_id="01hz8x3n0maphe4vyr1d",
+        ts_ms=1_704_067_200_004,
+        user_id="user_golden_mapheavy",
+        props=props,
+        context=EventContext(
+            device_id="dev_mapheavy_golden",
+            session_id="sess_mapheavy_golden",
+            tags=tags,
+        ),
     )
 
 

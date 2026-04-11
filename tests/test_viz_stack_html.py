@@ -254,7 +254,7 @@ def test_build_stack_html_mixed_row_tiers_two_top_tabs() -> None:
 def test_build_stack_html_full_matrix_sections() -> None:
     """All payload profiles × all codecs appear as separate sections under S0."""
 
-    profiles = ["small", "medium", "large", "evolution"]
+    profiles = ["small", "medium", "large", "map_heavy", "evolution"]
     codecs = ["avro", "protobuf", "json"]
     rows: list[dict[str, object]] = []
     for p in profiles:
@@ -281,10 +281,11 @@ def test_build_stack_html_full_matrix_sections() -> None:
         "results": rows,
     }
     html = build_stack_html(report)
-    assert html.count('<section class="result">') == 12
-    assert html.count('role="tabpanel"') == 9
-    assert html.count('data-tab-target="prof-s0-panel-') == 4
+    assert html.count('<section class="result">') == 15
+    assert html.count('role="tabpanel"') == 10
+    assert html.count('data-tab-target="prof-s0-panel-') == 5
     assert 'id="prof-s0-panel-small"' in html
+    assert 'id="prof-s0-panel-map-heavy"' in html
     assert 'id="prof-s0-panel-evolution"' in html
     for c in codecs:
         assert f"<code>{c}</code>" in html
@@ -362,7 +363,7 @@ def test_build_stack_html_from_build_report_full_matrix_avro_protobuf_json() -> 
         rubric_maintainability=None,
     )
     html = build_stack_html(report)
-    assert html.count('<section class="result">') == 12
+    assert html.count('<section class="result">') == 15
     assert 'class="tab tab-active" role="tab" id="tiertab-s0"' in html
     assert "avro, protobuf, json" in html
 
