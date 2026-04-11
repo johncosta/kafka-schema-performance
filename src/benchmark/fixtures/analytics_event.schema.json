@@ -23,7 +23,10 @@
       },
       "required": ["device_id", "session_id", "tags"]
     },
-    "payload_blob": { "type": "string", "contentEncoding": "base64" },
+    "payload_blob": {
+      "type": ["string", "null"],
+      "contentEncoding": "base64"
+    },
     "new_field": { "type": ["string", "null"] }
   }
 }
