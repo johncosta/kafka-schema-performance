@@ -11,7 +11,7 @@ Benchmark harness comparing **Apache Avro**, **Protocol Buffers**, and **JSON** 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[dev,kafka]"
 ```
 
 Optional **Kafka-protocol** end-to-end timings (publish + read back serialized payloads) use the **`[kafka]`** extra (`kafka-python-ng`, Testcontainers). They attach a **`kafka_e2e`** block to `report.json` and appear in **`summary.html`** when present. Local broker:
@@ -94,11 +94,11 @@ Use the [Makefile](Makefile) so local runs match CI. The first `make install` cr
 ```bash
 make install   # create .venv if needed, then editable install with dev extras
 make lint      # ruff, black --check, mypy (uses .venv)
-make test      # pytest + CLI smoke (same as CI)
+make test      # Docker Redpanda → full pytest (incl. Kafka E2E) → CLI smoke (same as CI)
 make report    # same as make test, then --tier all (S0–S4 in one report) + stack.html → reports/make-report/
 ```
 
-`make test` runs **`pytest`** then **`ksp-bench`** for **every tier (S0–S4)** with **`--scenario small,medium,large,evolution`**, **`--formats all`**, and **both** **`--compression zstd`** and **`--compression gzip`** (separate `/tmp/ksp-{tier}-{alg}/report.json` each). **S3/S4** passes **`--batch-size 8`**.
+`make test` starts **Docker Compose** (`docker/docker-compose.kafka.yml`, Redpanda on **127.0.0.1:19092**), runs the **full `pytest`** suite (including **`@pytest.mark.distributed`** in-process checks and **`@pytest.mark.kafka`** broker tests with **`KSP_KAFKA_BOOTSTRAP`**), tears the broker down, then runs **`ksp-bench`** for **every tier (S0–S4)** with **`--scenario small,medium,large,evolution`**, **`--formats all`**, and **both** **`--compression zstd`** and **`--compression gzip`** (separate `/tmp/ksp-{tier}-{alg}/report.json` each). **S3/S4** passes **`--batch-size 8`**. **Docker** is required for `make test` / CI.
 
 To use another Python for creating the venv, run `python3.12 -m venv .venv` yourself, then `make install` (the existing `.venv` is reused).
 
@@ -108,7 +108,11 @@ Manual equivalents:
 ruff check src tests
 black src tests
 mypy src
-pytest -q
+# Full suite locally (same env vars as make test):
+docker compose -f docker/docker-compose.kafka.yml up -d
+.venv/bin/python scripts/wait_for_tcp.py --host 127.0.0.1 --port 19092
+KSP_KAFKA_BOOTSTRAP=127.0.0.1:19092 pytest -q
+docker compose -f docker/docker-compose.kafka.yml down
 ```
 
 ## Scope limits (today)
