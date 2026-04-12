@@ -38,3 +38,17 @@ def test_sample_events_negative_count() -> None:
 
 def test_golden_large_payload_size() -> None:
     assert len(golden_large_event().payload_blob) == 100_000
+
+
+def test_sample_event_map_heavy_shape() -> None:
+    e = sample_event(PayloadProfile.map_heavy, seed=0)
+    assert len(e.props) == 96
+    assert e.context is not None
+    assert len(e.context.tags) == 72
+
+
+def test_sample_event_map_heavy_determinism() -> None:
+    a = sample_event(PayloadProfile.map_heavy, seed=42)
+    b = sample_event(PayloadProfile.map_heavy, seed=42)
+    assert a == b
+    assert a.props["k000"] == b.props["k000"]

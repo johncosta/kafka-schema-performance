@@ -1,8 +1,14 @@
-"""Containerized Kafka-protocol benchmarks; merge metrics into report shape."""
+"""Containerized Kafka-protocol benchmarks; merge metrics into report shape.
+
+Assertions treat ``value_bytes`` and produce/consume **throughput** (msg/s, MB/s)
+as first-class performance metrics: they must be positive, finite, and
+internally consistent with wall times and message counts.
+"""
 
 from __future__ import annotations
 
 import json
+import math
 import os
 from collections.abc import Callable
 from pathlib import Path
@@ -25,6 +31,48 @@ def _serialize_factory(codec: Codec, event: AnalyticsEvent) -> Callable[[], byte
     return lambda: codec.encode(event)
 
 
+def _assert_kafka_e2e_size_and_throughput(
+    row: dict[str, Any],
+    *,
+    warmup_messages: int,
+    timed_messages: int,
+) -> None:
+    """Wire size and msg/s + MB/s must match ``benchmark_kafka_case`` definitions."""
+
+    value_bytes = int(row["value_bytes"])
+    assert value_bytes > 0
+
+    produce = row["produce"]
+    consume = row["consume"]
+    assert produce["messages"] == timed_messages
+    assert consume["messages_read"] == warmup_messages + timed_messages
+
+    wall_p = float(produce["wall_s"])
+    wall_c = float(consume["wall_s"])
+    assert wall_p > 0 and wall_c > 0
+
+    total_read = float(warmup_messages + timed_messages)
+    timed_f = float(timed_messages)
+    checks: tuple[tuple[dict[str, Any], float, float], ...] = (
+        (produce, timed_f, wall_p),
+        (consume, total_read, wall_c),
+    )
+    for bucket, msg_count, wall in checks:
+        tps = float(bucket["throughput_messages_per_s"])
+        tmbs = float(bucket["throughput_megabytes_per_s"])
+        mpm = float(bucket["mean_per_message_s"])
+        assert tps == tps and tmbs == tmbs and mpm == mpm
+        assert tps > 0 and tmbs > 0 and mpm > 0
+        assert math.isclose(tps, msg_count / wall, rel_tol=1e-4, abs_tol=1e-9)
+        assert math.isclose(
+            tmbs,
+            (value_bytes * msg_count / wall) / (1024.0 * 1024.0),
+            rel_tol=1e-4,
+            abs_tol=1e-12,
+        )
+        assert math.isclose(mpm, wall / msg_count, rel_tol=1e-4, abs_tol=1e-12)
+
+
 @pytest.mark.kafka
 @pytest.mark.distributed
 def test_kafka_publish_consume_large_payload_all_codecs(
@@ -45,12 +93,23 @@ def test_kafka_publish_consume_large_payload_all_codecs(
             serialize=_serialize_factory(codec, event),
             warmup_messages=5,
             timed_messages=15,
+            deserialize=codec.decode,
         )
         assert row["produce"]["messages"] == 15
-        assert row["value_bytes"] > 0
-        assert row["produce"]["wall_s"] > 0
-        assert row["consume"]["wall_s"] > 0
+        _assert_kafka_e2e_size_and_throughput(
+            row,
+            warmup_messages=5,
+            timed_messages=15,
+        )
+        des = row.get("deserialize")
+        assert isinstance(des, dict)
+        assert float(des["mean_s"]) > 0
         cases.append(row)
+
+    by_codec = {str(c["codec"]): c for c in cases}
+    vb_json = int(by_codec["json"]["value_bytes"])
+    assert vb_json >= int(by_codec["avro"]["value_bytes"])
+    assert vb_json >= int(by_codec["protobuf"]["value_bytes"])
 
     broker = os.environ.get("KSP_KAFKA_BROKER_LABEL", "kafka_protocol")
     block = build_kafka_e2e_block(
@@ -58,7 +117,14 @@ def test_kafka_publish_consume_large_payload_all_codecs(
         broker_implementation=broker,
         cases=cases,
     )
-    assert block["kafka_e2e_version"] == 1
+    assert block["kafka_e2e_version"] == 2
+    assert "producer_config" in block
+    for c in block["cases"]:
+        _assert_kafka_e2e_size_and_throughput(
+            c,
+            warmup_messages=5,
+            timed_messages=15,
+        )
     assert len(block["cases"]) == 3
 
     report: dict[str, Any] = {
@@ -94,5 +160,12 @@ def test_kafka_case_json_small_payload_smoke(kafka_bootstrap_servers: str) -> No
         serialize=_serialize_factory(codec, event),
         warmup_messages=2,
         timed_messages=5,
+        deserialize=codec.decode,
     )
     assert row["serialize"]["mean_s"] > 0
+    assert isinstance(row.get("deserialize"), dict)
+    _assert_kafka_e2e_size_and_throughput(
+        row,
+        warmup_messages=2,
+        timed_messages=5,
+    )

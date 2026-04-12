@@ -2,7 +2,7 @@
 
 **Status:** Draft  
 **References:** [PRD-benchmark-utility.md](./PRD-benchmark-utility.md)  
-**Last updated:** 2026-04-11 (Phase 9)  
+**Last updated:** 2026-04-11 (through Phase 10)  
 
 This document turns the PRD into a **phased delivery plan**: repository shape, core abstractions, scenario tiers (S0–S4), reporting, and exit criteria per milestone. It is the working substitute for a full TDD until low-level design choices are locked.
 
@@ -205,6 +205,15 @@ Versioned JSON schema or Pydantic models for:
 
 **Exit:** PRD §6.6.1 “compress-only / decompress-only” satisfied for tier S1 without changing the existing combined S1 timers used for win-rate / viz.
 
+### Phase 10 — Payload diversity (`map_heavy` profile, PRD §6.6.2)
+
+- **New enum** `PayloadProfile.map_heavy`: synthetic events with **~96-string map entries** in `props` and **~72 context tags** (deterministic from seed) to stress map/array serialization without changing Avro / Protobuf / JSON schemas.
+- **Golden:** `golden_map_heavy_event()` for codec round-trip tests.
+- **CLI:** document `map_heavy` in `--scenario` help; `all` remains **small+medium+large** only (opt-in profile for longer runs).
+- **Tests:** extend exhaustive `build_report` / stack viz expectations to **5 profiles × 3 codecs**; generator shape and determinism tests.
+
+**Exit:** Teams can benchmark a **map- and array-heavy** shape alongside existing profiles; PRD payload-matrix backlog gains a concrete first slice.
+
 ---
 
 ## 6. Testing strategy (meta)
@@ -216,8 +225,8 @@ Versioned JSON schema or Pydantic models for:
 | **Stats** | Percentile helper against known tiny sample; monotonicity sanity. |
 | **Report** | `build_report` exhaustive matrix test: all payload profiles × `avro/protobuf/json` × tiers S0–S4 × `gzip/zstd` scenario compression (minimal iterations). `make test` CLI smokes repeat that matrix via `ksp-bench`. Markdown contains tier labels. |
 | **Distributed-style proxy** | `tests/test_distributed_performance.py` — `@pytest.mark.distributed`: **large** / **medium** wire (S0) and **S1** compressed size where JSON is larger than Avro/Protobuf on fixtures (in-process only). |
-| **Kafka E2E** | `docker/docker-compose.kafka.yml` (**Apache Kafka**, **KRaft** single node). **`make test`** brings the broker up and sets **`KSP_KAFKA_BOOTSTRAP`** for the full pytest run; **`make test-kafka`** runs only **`pytest tests/integration -m kafka`**. `tests/integration/` — `@pytest.mark.kafka`: synchronous produce + consume via `kafka-python-ng`; metrics as **`kafka_e2e`** in `report.json`. **Summary HTML** renders a Kafka section when that key exists. Ad-hoc Testcontainers if **`KSP_USE_TESTCONTAINERS=1`** (no compose). |
-| **Visualization** | `ksp-bench viz report.json -o stack.html` — HTML stack flow + mean-time bars from JSON (encode/decode/round-trip; S2/S3/S4 extras when present). **Five tier tabs** (S0–S4) always; empty tiers show a note referencing the scenario tier. **Profile tabs** inside tiers that have rows; glossary explains tiers. Summary lists **scenario tier**, **profiles**, **formats**, **scenario compression**, **iterations**; rows add **Phase-3 gzip/zstd** probes and **S1** timed compressed sizes. **Same command** writes **`summary.html`** (default, next to `-o`): **aggregate codec win %** across all tier×profile metric head-to-heads (fastest time or smallest bytes; ties split), headline bullets when round-trip spread exceeds a threshold, per **tier × profile** comparison tables (best-per-column highlights, optional S1 compressed / S3 / S4 columns), **regression_check** warnings, and **limitations** text—use `--no-summary` or `--summary-output` to override. Also writes **`distributed.html`**: **S0 wire** + **S1 compressed** tables per profile (distributed-style footprint), **`kafka_e2e`** when present; **`--no-distributed`** / **`--distributed-output`** mirror the summary flags. Stack, summary, and distributed pages **cross-link**. |
+| **Kafka E2E** | `docker/docker-compose.kafka.yml` (**Apache Kafka**, **KRaft** single node). **`make test`** brings the broker up and sets **`KSP_KAFKA_BOOTSTRAP`** for the full pytest run; **`make test-kafka`** runs only **`pytest tests/integration -m kafka`**. `tests/integration/` — `@pytest.mark.kafka`: synchronous produce + consume via `kafka-python-ng`; metrics as **`kafka_e2e`** (v2: **client**, **producer_config** / **consumer_config**, **throughput** MB/s per case, **roadmap** string, optional per-case **`deserialize`** mean for in-process decode of produce bytes **outside** the consumer poll loop) in `report.json`. **Markdown**, **summary**, and **distributed** HTML render the block when present (HTML adds a **Deserialize** column when any case includes `deserialize`). Ad-hoc Testcontainers if **`KSP_USE_TESTCONTAINERS=1`** (no compose). |
+| **Visualization** | `ksp-bench viz report.json -o stack.html` — HTML stack flow + mean-time bars from JSON (encode/decode/round-trip; S2/S3/S4 extras when present). **Five tier tabs** (S0–S4) always; empty tiers show a note referencing the scenario tier. **Profile tabs** inside tiers that have rows; glossary explains tiers. Summary lists **scenario tier**, **profiles**, **formats**, **scenario compression**, **iterations**; rows add **Phase-3 gzip/zstd** probes and **S1** timed compressed sizes. **Same command** writes **`summary.html`** (default, next to `-o`): **How to read this summary** (PRD §7.2: lab scope, win rate, best cells, tier glossary), **aggregate codec win %** across all tier×profile metric head-to-heads (fastest time or smallest bytes; ties split), headline bullets when round-trip spread exceeds a threshold, per **tier × profile** comparison tables (best-per-column highlights, optional S1 compressed / S3 / S4 columns), **regression_check** warnings, and **limitations** text—use `--no-summary` or `--summary-output` to override. Also writes **`distributed.html`**: **S0 wire** + **S1 compressed** tables per profile (distributed-style footprint), **`kafka_e2e`** when present; **`--no-distributed`** / **`--distributed-output`** mirror the summary flags. Stack, summary, and distributed pages **cross-link**. |
 | **Benchmarks** | Not run in default CI (noisy); optional scheduled job or `--quick` smoke (few iterations). |
 
 ---

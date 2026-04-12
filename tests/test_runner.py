@@ -182,7 +182,7 @@ def test_build_report_exhaustive_matrix_all_profiles_formats_compression(
     assert report["scenario"]["compression"] == compression
     assert report["scenario"]["formats"] == ["avro", "protobuf", "json"]
     assert report["scenario"]["payload_profiles"] == [p.value for p in PayloadProfile]
-    assert len(report["results"]) == 12
+    assert len(report["results"]) == 15
 
     profiles = {p.value for p in PayloadProfile}
     codecs = {"avro", "protobuf", "json"}

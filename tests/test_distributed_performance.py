@@ -14,6 +14,7 @@ tests and the ``kafka_e2e`` block merged into ``report.json``.
 
 from __future__ import annotations
 
+import math
 from typing import Any, cast
 
 import pytest
@@ -53,6 +54,29 @@ def _row_for(
     pytest.fail(f"no row for {profile=} {tier=} {codec=}")
 
 
+def _assert_s0_row_throughput_matches_wire(row: dict[str, Any]) -> None:
+    """S0 rows report ``raw_size_bytes`` plus MB/s and records/s derived from means."""
+
+    raw = int(row["raw_size_bytes"])
+    assert raw > 0
+    for phase, mb_key in (
+        ("encode", "encode_mb_per_s"),
+        ("decode", "decode_mb_per_s"),
+        ("round_trip", "round_trip_mb_per_s"),
+    ):
+        block = cast(dict[str, Any], row[phase])
+        mean_s = float(block["mean_s"])
+        mbps = float(block[mb_key])
+        rps = float(block["records_per_s"])
+        assert mean_s > 0
+        assert mbps == mbps and rps == rps
+        assert mbps > 0 and rps > 0
+        exp_mb = (raw / mean_s) / (1024.0 * 1024.0)
+        exp_rps = 1.0 / mean_s
+        assert math.isclose(mbps, exp_mb, rel_tol=1e-5, abs_tol=1e-12)
+        assert math.isclose(rps, exp_rps, rel_tol=1e-5, abs_tol=1e-12)
+
+
 @pytest.mark.distributed
 def test_large_profile_raw_wire_json_largest_s0() -> None:
     """Binary codecs use less wire than JSON for the large fixture (S0)."""
@@ -73,6 +97,10 @@ def test_large_profile_raw_wire_json_largest_s0() -> None:
     p = _mean_raw_bytes(_row_for(report, profile="large", tier="S0", codec="protobuf"))
     assert j > a and j > p, "expected JSON wire > binary codecs for large profile"
     assert a > 0 and p > 0
+    for fmt in ("json", "avro", "protobuf"):
+        _assert_s0_row_throughput_matches_wire(
+            _row_for(report, profile="large", tier="S0", codec=fmt),
+        )
 
 
 @pytest.mark.distributed
@@ -127,6 +155,10 @@ def test_medium_profile_raw_wire_json_largest_s0() -> None:
     a = _mean_raw_bytes(_row_for(report, profile="medium", tier="S0", codec="avro"))
     p = _mean_raw_bytes(_row_for(report, profile="medium", tier="S0", codec="protobuf"))
     assert j > a and j > p
+    for fmt in ("json", "avro", "protobuf"):
+        _assert_s0_row_throughput_matches_wire(
+            _row_for(report, profile="medium", tier="S0", codec=fmt),
+        )
 
 
 def test_bench_codec_s3_s4_batch_metrics_exist_for_large_single_codec() -> None:

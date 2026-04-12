@@ -125,6 +125,93 @@ def _fmt_ratio(x: float) -> str:
     return f"{x:.3f}"
 
 
+def append_kafka_e2e_markdown(lines: list[str], report: dict[str, Any]) -> None:
+    """Append optional broker-backed block when ``kafka_e2e`` is present."""
+
+    ke = report.get("kafka_e2e")
+    if not isinstance(ke, dict):
+        return
+    lines.extend(["---", "", "## Kafka-protocol end-to-end (`kafka_e2e`)", ""])
+    lines.append(f"- **kafka_e2e_version:** {ke.get('kafka_e2e_version', '?')}")
+    lines.append(f"- **Bootstrap:** `{ke.get('bootstrap_servers', '?')}`")
+    lines.append(f"- **Broker label:** {ke.get('broker_implementation', '?')}")
+    cli = ke.get("client")
+    if isinstance(cli, dict):
+        lib = cli.get("library", "?")
+        av = cli.get("api_version", "?")
+        lines.append(f"- **Client library:** {lib} (api_version={av})")
+    pc = ke.get("producer_config")
+    if isinstance(pc, dict):
+        lines.append(f"- **Producer config (snapshot):** `{pc}`")
+    cc = ke.get("consumer_config")
+    if isinstance(cc, dict):
+        lines.append(f"- **Consumer config (snapshot):** `{cc}`")
+    phases = ke.get("phases")
+    if isinstance(phases, dict) and phases:
+        lines.append("")
+        lines.append("**Phase definitions:**")
+        for k, v in phases.items():
+            if isinstance(v, str):
+                lines.append(f"- **{k}:** {v}")
+    rm = ke.get("roadmap")
+    if isinstance(rm, str) and rm.strip():
+        lines.extend(["", f"**Roadmap (normative target, PRD §6.3.1):** {rm}"])
+    cases = ke.get("cases")
+    if not isinstance(cases, list) or not cases:
+        lines.append("")
+        return
+    lines.extend(["", "### Per-codec cases", ""])
+    for c in cases:
+        if not isinstance(c, dict):
+            continue
+        codec = c.get("codec", "?")
+        prof = c.get("payload_profile", "?")
+        vb = c.get("value_bytes", "?")
+        lines.append(f"- **`{codec}` / `{prof}`:** value {vb} B")
+        ser = c.get("serialize")
+        if isinstance(ser, dict):
+            ms = ser.get("mean_s")
+            if isinstance(ms, (int, float)) and ms == ms:
+                lines.append(f"  - Serialize mean: {_fmt_sci(float(ms))} s")
+        des = c.get("deserialize")
+        if isinstance(des, dict):
+            dm = des.get("mean_s")
+            if isinstance(dm, (int, float)) and dm == dm:
+                lines.append(
+                    f"  - Deserialize mean (same value bytes, not in consumer poll): "
+                    f"{_fmt_sci(float(dm))} s",
+                )
+        pr = c.get("produce")
+        if isinstance(pr, dict):
+            mpm = pr.get("mean_per_message_s")
+            tps = pr.get("throughput_messages_per_s")
+            tmbs = pr.get("throughput_megabytes_per_s")
+            bits: list[str] = []
+            if isinstance(mpm, (int, float)) and mpm == mpm:
+                bits.append(f"produce mean/msg {_fmt_sci(float(mpm))} s")
+            if isinstance(tps, (int, float)) and tps == tps:
+                bits.append(f"{float(tps):,.1f} msg/s")
+            if isinstance(tmbs, (int, float)) and tmbs == tmbs:
+                bits.append(f"{_fmt_mb_s(float(tmbs))} MB/s")
+            if bits:
+                lines.append(f"  - Timed produce: {', '.join(bits)}")
+        co = c.get("consume")
+        if isinstance(co, dict):
+            mpm = co.get("mean_per_message_s")
+            tps = co.get("throughput_messages_per_s")
+            tmbs = co.get("throughput_megabytes_per_s")
+            bits = []
+            if isinstance(mpm, (int, float)) and mpm == mpm:
+                bits.append(f"consume mean/msg {_fmt_sci(float(mpm))} s")
+            if isinstance(tps, (int, float)) and tps == tps:
+                bits.append(f"{float(tps):,.1f} msg/s")
+            if isinstance(tmbs, (int, float)) and tmbs == tmbs:
+                bits.append(f"{_fmt_mb_s(float(tmbs))} MB/s")
+            if bits:
+                lines.append(f"  - Consume loop: {', '.join(bits)}")
+    lines.append("")
+
+
 def _scenario_profiles(scen: dict[str, Any]) -> list[str]:
     p = scen.get("payload_profiles")
     if isinstance(p, list) and p:
@@ -553,6 +640,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             lines.append(f"- Included: {', '.join(lc['included'])}")
             lines.append(f"- Excluded: {', '.join(lc['excluded'])}")
             lines.append("")
+    append_kafka_e2e_markdown(lines, report)
     append_rubric_appendix(lines, report)
     append_phase8_sections(lines, report)
     return "\n".join(lines)

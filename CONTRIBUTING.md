@@ -19,6 +19,6 @@ Profiles are the `PayloadProfile` enum and the `sample_event()` / golden helpers
 2. Implement a branch in `sample_event()` that returns a representative `AnalyticsEvent` for that profile (use the profile’s `rng` for deterministic fields).
 3. Add `golden_<name>_event()` if regression tests need a fixed record; keep it aligned with [JSON Schema](src/benchmark/fixtures/) and Avro/Protobuf fixtures where applicable.
 4. Extend Avro `.avsc` / `event.proto` / JSON schema only if the logical shape changes; regenerate `event_pb2.py` when `.proto` changes (see README).
-5. Add unit tests: round-trip for all codecs on `sample_event(NewProfile, seed=…)` and any golden path; optionally extend `tests/test_runner.py` matrix if the profile must appear in exhaustive `build_report` tests.
+5. Add unit tests: round-trip for all codecs on `sample_event(NewProfile, seed=…)` and any golden path; extend `tests/test_runner.py` exhaustive matrix counts and `tests/test_viz_stack_html.py` section counts when the new profile is part of `list(PayloadProfile)` (see **`map_heavy`** as a reference change).
 
 Run `make test-ci` before opening a PR.

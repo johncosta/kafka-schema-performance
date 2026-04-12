@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from benchmark.viz.stack_html import (
+    TIER_DESCRIPTIONS,
     TIER_ORDER,
     _fmt_time,
     _mean_s,
@@ -217,6 +218,58 @@ def _aggregate_codec_win_rates(
     return n_comparisons, win_points, sorted_by_pts
 
 
+def _reading_this_report_section() -> str:
+    """Plain-language orientation for executives and other non-harness readers."""
+
+    tier_items: list[str] = []
+    for code in TIER_ORDER:
+        desc = TIER_DESCRIPTIONS.get(code)
+        if not desc:
+            continue
+        tier_items.append(
+            "<dt>"
+            f"<strong><code>{html.escape(code)}</code></strong></dt>"
+            f"<dd>{html.escape(desc)}</dd>",
+        )
+    tier_dl = f"<dl>{''.join(tier_items)}</dl>" if tier_items else ""
+    return (
+        '<section class="reader-guide" aria-label="How to read this report">'
+        "<h2>How to read this summary</h2>"
+        "<p>This page compares serialization formats on "
+        "<strong>synthetic payloads</strong> under a "
+        "<strong>controlled, in-process lab setup</strong> (CPU-focused timings "
+        "and wire sizes). Use it for <strong>directional</strong> insight—for "
+        "example, whether one format tends toward smaller payloads or lower mean "
+        "latency in this scenario—not as a guarantee for your production traffic, "
+        "hardware, or Kafka topology.</p>"
+        "<ul>"
+        "<li><strong>Win rate table:</strong> counts how often each format wins a "
+        "head-to-head comparison (fastest mean time or smallest bytes) within the "
+        "same tier and payload profile. A higher percentage means that format led "
+        "more often across those apples-to-apples matchups in this run.</li>"
+        "<li><strong>Green &ldquo;best&rdquo; cells:</strong> lowest mean encode, "
+        "decode, or round-trip time in that column, or smallest byte count for size "
+        "columns. Ties can share the highlight.</li>"
+        "<li><strong>Tier × profile tables:</strong> each block fixes the benchmark "
+        "layer (tier) and record shape (profile) so every row is comparable.</li>"
+        "<li><strong>Kafka-protocol section (when present):</strong> optional "
+        "measurement through a real broker with the same serialized bytes; still a "
+        "narrow client configuration—see its fine-print for what is and is not "
+        "included.</li>"
+        "</ul>"
+        "<details><summary>What the scenario tiers (S0–S4) measure</summary>"
+        f"{tier_dl}"
+        '<p class="fineprint">The <strong>stack</strong> companion page shows bar '
+        "charts per codec; <strong>distributed footprint</strong> (when linked) "
+        "emphasizes wire and compression size.</p>"
+        "</details>"
+        '<p class="fineprint">Scroll to <strong>Limitations &amp; caveats</strong> '
+        "at the end for evidence gaps and interpretation policy when the report "
+        "includes them.</p>"
+        "</section>"
+    )
+
+
 def _win_rate_section(
     groups: dict[tuple[str, str], list[dict[str, Any]]],
     all_rows: list[dict[str, Any]],
@@ -357,6 +410,13 @@ def _regression_block(report: dict[str, Any]) -> str:
     )
 
 
+def _kafka_e2e_mb_s_cell(block: dict[str, Any], key: str) -> str:
+    v = block.get(key)
+    if isinstance(v, (int, float)) and v == v:
+        return html.escape(f"{float(v):.2f}")
+    return "—"
+
+
 def _kafka_e2e_section(report: dict[str, Any]) -> str:
     block = report.get("kafka_e2e")
     if not isinstance(block, dict):
@@ -364,6 +424,43 @@ def _kafka_e2e_section(report: dict[str, Any]) -> str:
     ver = block.get("kafka_e2e_version", "?")
     impl = html.escape(str(block.get("broker_implementation", "?")))
     boot = html.escape(str(block.get("bootstrap_servers", "?")))
+    client_html = ""
+    cli = block.get("client")
+    if isinstance(cli, dict):
+        lib = html.escape(str(cli.get("library", "?")))
+        av = html.escape(json.dumps(cli.get("api_version"), separators=(",", ":")))
+        client_html = (
+            f"<p><strong>Client:</strong> <code>{lib}</code> "
+            f'<span class="meta">api_version={av}</span></p>'
+        )
+    cfg_html = ""
+    pc = block.get("producer_config")
+    cc = block.get("consumer_config")
+    if isinstance(pc, dict) or isinstance(cc, dict):
+        parts: list[str] = [
+            "<details><summary>Producer / consumer config (snapshot)</summary>"
+        ]
+        if isinstance(pc, dict):
+            parts.append(
+                '<p><strong>Producer</strong></p><pre class="cfg-pre">'
+                f"{html.escape(json.dumps(pc, indent=2, sort_keys=True, default=str))}"
+                "</pre>",
+            )
+        if isinstance(cc, dict):
+            parts.append(
+                '<p><strong>Consumer</strong></p><pre class="cfg-pre">'
+                f"{html.escape(json.dumps(cc, indent=2, sort_keys=True, default=str))}"
+                "</pre>",
+            )
+        parts.append("</details>")
+        cfg_html = "".join(parts)
+    roadmap = block.get("roadmap")
+    roadmap_html = ""
+    if isinstance(roadmap, str) and roadmap.strip():
+        roadmap_html = (
+            f'<p class="fineprint"><strong>Roadmap (PRD §6.3.1):</strong> '
+            f"{html.escape(roadmap.strip())}</p>"
+        )
     phases = block.get("phases")
     phase_ul = ""
     if isinstance(phases, dict) and phases:
@@ -376,6 +473,12 @@ def _kafka_e2e_section(report: dict[str, Any]) -> str:
         if lis:
             phase_ul = f"<ul>{''.join(lis)}</ul>"
     cases = block.get("cases")
+    show_deserialize = False
+    if isinstance(cases, list):
+        for c in cases:
+            if isinstance(c, dict) and isinstance(c.get("deserialize"), dict):
+                show_deserialize = True
+                break
     rows: list[str] = []
     if isinstance(cases, list):
         for c in cases:
@@ -385,6 +488,7 @@ def _kafka_e2e_section(report: dict[str, Any]) -> str:
             prof = html.escape(str(c.get("payload_profile", "?")))
             vb = c.get("value_bytes", "?")
             ser = c.get("serialize")
+            des = c.get("deserialize")
             pr = c.get("produce")
             co = c.get("consume")
             ser_m = ""
@@ -392,31 +496,52 @@ def _kafka_e2e_section(report: dict[str, Any]) -> str:
                 ms = ser.get("mean_s")
                 if isinstance(ms, (int, float)) and ms == ms:
                     ser_m = html.escape(f"{float(ms) * 1e6:.2f} µs")
+            des_m = "—"
+            if isinstance(des, dict):
+                dm = des.get("mean_s")
+                if isinstance(dm, (int, float)) and dm == dm:
+                    des_m = html.escape(f"{float(dm) * 1e6:.2f} µs")
             pr_m = ""
+            pr_mb = "—"
             if isinstance(pr, dict):
                 mp = pr.get("mean_per_message_s")
                 if isinstance(mp, (int, float)) and mp == mp:
                     pr_m = html.escape(f"{float(mp) * 1e3:.3f} ms/msg")
+                pr_mb = _kafka_e2e_mb_s_cell(pr, "throughput_megabytes_per_s")
             co_m = ""
+            co_mb = "—"
             if isinstance(co, dict):
                 mc = co.get("mean_per_message_s")
                 if isinstance(mc, (int, float)) and mc == mc:
                     co_m = html.escape(f"{float(mc) * 1e3:.3f} ms/msg")
-            rows.append(
-                "<tr>"
+                co_mb = _kafka_e2e_mb_s_cell(co, "throughput_megabytes_per_s")
+            row_cells = (
                 f"<td><code>{codec}</code></td>"
                 f"<td>{prof}</td>"
                 f"<td>{html.escape(str(vb))}</td>"
                 f"<td>{ser_m or '—'}</td>"
-                f"<td>{pr_m or '—'}</td>"
-                f"<td>{co_m or '—'}</td>"
-                "</tr>",
             )
-    thead = (
+            if show_deserialize:
+                row_cells += f"<td>{des_m}</td>"
+            row_cells += (
+                f"<td>{pr_m or '—'}</td>"
+                f'<td class="num">{pr_mb}</td>'
+                f"<td>{co_m or '—'}</td>"
+                f'<td class="num">{co_mb}</td>'
+            )
+            rows.append(f"<tr>{row_cells}</tr>")
+    thead_core = (
         "<tr><th>Codec</th><th>Profile</th><th>Value bytes</th>"
-        "<th>Serialize (mean)</th><th>Produce (mean/msg)</th>"
-        "<th>Consume (mean/msg)</th></tr>"
+        "<th>Serialize (mean)</th>"
     )
+    thead_des = "<th>Deserialize (mean)</th>" if show_deserialize else ""
+    thead_tail = (
+        "<th>Produce (mean/msg)</th>"
+        '<th class="num">Produce MB/s</th>'
+        "<th>Consume (mean/msg)</th>"
+        '<th class="num">Consume MB/s</th></tr>'
+    )
+    thead = f"{thead_core}{thead_des}{thead_tail}"
     tbl = (
         '<table class="matrix"><thead>'
         f"{thead}</thead><tbody>{''.join(rows)}</tbody></table>"
@@ -424,13 +549,17 @@ def _kafka_e2e_section(report: dict[str, Any]) -> str:
     fine = (
         '<p class="fineprint">Broker-backed metrics are <strong>not</strong> '
         "tier S0–S4; they measure real Kafka-protocol I/O plus in-process "
-        f"serialize. <code>kafka_e2e_version</code> {html.escape(str(ver))}.</p>"
+        "serialize. Optional <strong>Deserialize</strong> column is in-process "
+        "decode of the produce value bytes, not inside the consumer poll loop. "
+        "Throughput columns use value bytes × message counts over the timed wall "
+        "interval (consume includes warmup+timed messages). "
+        f"<code>kafka_e2e_version</code> {html.escape(str(ver))}.</p>"
     )
     return (
         '<section class="kafka-e2e"><h2>Kafka-protocol end-to-end</h2>'
         f"<p><strong>Broker:</strong> {impl} &nbsp;|&nbsp; "
         f"<strong>Bootstrap:</strong> <code>{boot}</code></p>"
-        f"{phase_ul}{tbl}{fine}</section>"
+        f"{client_html}{cfg_html}{roadmap_html}{phase_ul}{tbl}{fine}</section>"
     )
 
 
@@ -716,6 +845,15 @@ body {
 h1 { font-size: 1.35rem; }
 h2 { font-size: 1.05rem; margin-top: 1.25rem; }
 .meta { font-size: 0.9rem; line-height: 1.5; }
+.cfg-pre {
+  font-size: 0.78rem;
+  max-height: 14rem;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #ddd;
+  padding: 0.5rem;
+  margin: 0.35rem 0;
+}
 .intro ul { margin: 0.5rem 0 0 1rem; line-height: 1.5; }
 .tier-block {
   border: 1px solid #ddd;
@@ -753,6 +891,28 @@ h2 { font-size: 1.05rem; margin-top: 1.25rem; }
   color: #444;
   margin: 0.5rem 0 0;
   line-height: 1.4;
+}
+.reader-guide {
+  margin: 0 0 1.25rem;
+  padding: 0.75rem 1rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #b8c9db;
+  background: #f0f5fa;
+}
+.reader-guide ul { margin: 0.5rem 0 0.75rem 1rem; line-height: 1.55; }
+.reader-guide dl {
+  margin: 0.5rem 0 0;
+  padding: 0 0 0 0.25rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+.reader-guide dt { margin-top: 0.5rem; }
+.reader-guide dd { margin: 0.15rem 0 0 0.5rem; }
+.reader-guide details { margin-top: 0.5rem; }
+.reader-guide summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #1e5a8a;
 }
 .caveats {
   margin-top: 1.5rem;
@@ -917,6 +1077,8 @@ def build_summary_html(
     else:
         nav = ""
 
+    reader_guide = _reading_this_report_section()
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -928,6 +1090,7 @@ def build_summary_html(
 <body>
 {nav}
 <h1>Performance summary</h1>
+{reader_guide}
 {summary}
 {body}
 </body>
