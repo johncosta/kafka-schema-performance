@@ -2,7 +2,7 @@
 
 **Document status:** Draft (gap-hardened)  
 **Owner:** Platform / Data Engineering  
-**Last updated:** 2026-04-11 *(Kafka E2E reporting §6.3.1 / §7.3–7.5)*  
+**Last updated:** 2026-04-11 *(Kafka E2E §6.3.1 / §7.2 summary reader guide / §7.3–7.5)*  
 
 ---
 
@@ -281,6 +281,11 @@ Provide a **narrow in-process** suite with deterministic inputs, **canned timing
 - **Narrative appendix:** Governance and maintainability scorecards with references to internal standards.
 - **Artifact integrity:** Hash of fixture inputs; list of dependency versions (SBOM optional follow-up).
 - **Honest scope:** Each release notes which Section **6.6** priorities are implemented vs backlog; HTML viz and summary win-rates MUST align with that scope (Section 3.3).
+
+### 7.2 Performance summary HTML (`summary.html`, whole page)
+
+- **Scenario banner:** SHALL surface tier, payload profiles, formats, scenario compression, timed iterations, and `report_version` (existing behavior).
+- **Reader orientation:** SHALL include a **How to read this summary** block with plain-language guidance on: **lab scope** (synthetic payloads, in-process CPU focus, directional not production-guaranteed); **win rate** (head-to-head wins per tier×profile); **green “best” cells** (fastest mean time or smallest bytes in that column); **tier×profile** table grouping; optional **Kafka-protocol** annex when `kafka_e2e` is present; and a **collapsible S0–S4 glossary** whose definitions stay aligned with the harness (`TIER_DESCRIPTIONS` or documented equivalent).
 
 ### 7.3 Kafka `kafka_e2e` in machine-readable reports
 

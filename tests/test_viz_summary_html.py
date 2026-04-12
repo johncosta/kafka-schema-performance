@@ -28,6 +28,28 @@ def _row(
     }
 
 
+def test_build_summary_html_includes_executive_reader_guide() -> None:
+    report = {
+        "report_version": 9,
+        "scenario": {
+            "tier": "S0",
+            "payload_profiles": ["small"],
+            "formats": ["json"],
+            "compression": "zstd",
+            "timed_iterations": 3,
+        },
+        "results": [
+            _row(tier="S0", profile="small", codec="json", enc=1e-6, dec=1e-6, rt=1e-6),
+        ],
+    }
+    html = build_summary_html(report)
+    assert 'class="reader-guide"' in html
+    assert "How to read this summary" in html
+    assert "Win rate table" in html
+    assert "What the scenario tiers" in html
+    assert "Codec only:" in html
+
+
 def test_build_summary_html_stack_data_link_when_href_set() -> None:
     report = {
         "report_version": 8,

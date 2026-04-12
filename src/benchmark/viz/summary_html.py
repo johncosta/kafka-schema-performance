@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from benchmark.viz.stack_html import (
+    TIER_DESCRIPTIONS,
     TIER_ORDER,
     _fmt_time,
     _mean_s,
@@ -215,6 +216,58 @@ def _aggregate_codec_win_rates(
         key=lambda c: (-win_points.get(c, 0.0), c),
     )
     return n_comparisons, win_points, sorted_by_pts
+
+
+def _reading_this_report_section() -> str:
+    """Plain-language orientation for executives and other non-harness readers."""
+
+    tier_items: list[str] = []
+    for code in TIER_ORDER:
+        desc = TIER_DESCRIPTIONS.get(code)
+        if not desc:
+            continue
+        tier_items.append(
+            "<dt>"
+            f"<strong><code>{html.escape(code)}</code></strong></dt>"
+            f"<dd>{html.escape(desc)}</dd>",
+        )
+    tier_dl = f"<dl>{''.join(tier_items)}</dl>" if tier_items else ""
+    return (
+        '<section class="reader-guide" aria-label="How to read this report">'
+        "<h2>How to read this summary</h2>"
+        "<p>This page compares serialization formats on "
+        "<strong>synthetic payloads</strong> under a "
+        "<strong>controlled, in-process lab setup</strong> (CPU-focused timings "
+        "and wire sizes). Use it for <strong>directional</strong> insight—for "
+        "example, whether one format tends toward smaller payloads or lower mean "
+        "latency in this scenario—not as a guarantee for your production traffic, "
+        "hardware, or Kafka topology.</p>"
+        "<ul>"
+        "<li><strong>Win rate table:</strong> counts how often each format wins a "
+        "head-to-head comparison (fastest mean time or smallest bytes) within the "
+        "same tier and payload profile. A higher percentage means that format led "
+        "more often across those apples-to-apples matchups in this run.</li>"
+        "<li><strong>Green &ldquo;best&rdquo; cells:</strong> lowest mean encode, "
+        "decode, or round-trip time in that column, or smallest byte count for size "
+        "columns. Ties can share the highlight.</li>"
+        "<li><strong>Tier × profile tables:</strong> each block fixes the benchmark "
+        "layer (tier) and record shape (profile) so every row is comparable.</li>"
+        "<li><strong>Kafka-protocol section (when present):</strong> optional "
+        "measurement through a real broker with the same serialized bytes; still a "
+        "narrow client configuration—see its fine-print for what is and is not "
+        "included.</li>"
+        "</ul>"
+        "<details><summary>What the scenario tiers (S0–S4) measure</summary>"
+        f"{tier_dl}"
+        '<p class="fineprint">The <strong>stack</strong> companion page shows bar '
+        "charts per codec; <strong>distributed footprint</strong> (when linked) "
+        "emphasizes wire and compression size.</p>"
+        "</details>"
+        '<p class="fineprint">Scroll to <strong>Limitations &amp; caveats</strong> '
+        "at the end for evidence gaps and interpretation policy when the report "
+        "includes them.</p>"
+        "</section>"
+    )
 
 
 def _win_rate_section(
@@ -839,6 +892,28 @@ h2 { font-size: 1.05rem; margin-top: 1.25rem; }
   margin: 0.5rem 0 0;
   line-height: 1.4;
 }
+.reader-guide {
+  margin: 0 0 1.25rem;
+  padding: 0.75rem 1rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #b8c9db;
+  background: #f0f5fa;
+}
+.reader-guide ul { margin: 0.5rem 0 0.75rem 1rem; line-height: 1.55; }
+.reader-guide dl {
+  margin: 0.5rem 0 0;
+  padding: 0 0 0 0.25rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+.reader-guide dt { margin-top: 0.5rem; }
+.reader-guide dd { margin: 0.15rem 0 0 0.5rem; }
+.reader-guide details { margin-top: 0.5rem; }
+.reader-guide summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #1e5a8a;
+}
 .caveats {
   margin-top: 1.5rem;
   padding: 0.75rem 1rem;
@@ -1002,6 +1077,8 @@ def build_summary_html(
     else:
         nav = ""
 
+    reader_guide = _reading_this_report_section()
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1013,6 +1090,7 @@ def build_summary_html(
 <body>
 {nav}
 <h1>Performance summary</h1>
+{reader_guide}
 {summary}
 {body}
 </body>
